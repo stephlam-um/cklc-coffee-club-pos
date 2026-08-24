@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.pnpm-store/
+.env.local
+.env.*.local
+!.env.example
+.worktrees/
+coverage/
+.DS_Store
+.dev-server*.log
+
+.vercel
+.env*
