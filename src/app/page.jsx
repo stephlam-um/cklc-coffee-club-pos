@@ -239,7 +239,7 @@ export default function PosPage() {
           <TodayDashboard data={dashboardData} loading={dashboardLoading} error={dashboardError} staff={staff} onRefresh={loadDashboard} onUpdateStatus={updateOrderStatus} />
         ) : <main className="workspace" id="main-content">
           <div className="catalog-column">
-            <ProductCatalog products={products} mode={mode} onAdd={product => setCart(addProduct(cart, product))} />
+            <ProductCatalog products={products} mode={mode} onAdd={(product, temperature) => setCart(current => addProduct(current, product, temperature))} />
             {mode === 'WASTE' && (
               <section className="reason-wrap" aria-labelledby="waste-reason-title">
                 <div><p className="eyebrow">Required Detail</p><h2 id="waste-reason-title">Why Was It Wasted?</h2></div>
@@ -257,7 +257,7 @@ export default function PosPage() {
             mode={mode}
             total={total}
             submitting={submitting}
-            onChangeQuantity={(productId, delta) => setCart(changeQuantity(cart, productId, delta))}
+            onChangeQuantity={(productId, temperature, delta) => setCart(current => changeQuantity(current, productId, temperature, delta))}
             onClear={clearCart}
             onCheckout={checkout}
           />

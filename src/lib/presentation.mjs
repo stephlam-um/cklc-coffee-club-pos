@@ -14,6 +14,11 @@ export function paymentActionLabel(total, method) {
   return `Pay ${formatMop(total)} with ${method}`
 }
 
+export function formatTemperature(value) {
+  const labels = { HOT: 'Hot', ICED: 'Iced' }
+  return labels[String(value || '').toUpperCase()] || ''
+}
+
 export function getInitials(name) {
   const initials = String(name || '')
     .trim()

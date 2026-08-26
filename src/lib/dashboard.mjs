@@ -8,6 +8,7 @@ export function normalizeDashboardOrder(row = {}) {
   const items = Array.isArray(row.items) ? row.items.map(item => ({
     productId: String(item.productId || ''),
     name: String(item.name || 'Unnamed item'),
+    temperature: String(item.temperature || ''),
     quantity: Number(item.quantity || 0),
     unitPrice: Number(item.unitPrice || 0),
     lineTotal: Number(item.lineTotal || 0),

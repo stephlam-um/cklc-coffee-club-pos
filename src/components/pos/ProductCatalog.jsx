@@ -1,9 +1,12 @@
 import { formatMop } from '@/lib/presentation.mjs'
+import { DRINK_TEMPERATURES } from '@/lib/domain.mjs'
+
+const TEMPERATURE_LABELS = { HOT: 'Hot', ICED: 'Iced' }
 
 const MODE_COPY = {
-  NORMAL_SALE: { eyebrow: 'Regular Menu', title: 'What Can We Make?', hint: 'Tap an item to add it to the order.' },
-  STAFF: { eyebrow: 'Team Menu', title: 'Staff-Price Drinks', hint: 'Staff pricing is applied automatically.' },
-  WASTE: { eyebrow: 'Waste Log', title: 'What Was Wasted?', hint: 'Choose an item, quantity, and reason.' },
+  NORMAL_SALE: { eyebrow: 'Regular Menu', title: 'What Can We Make?', hint: 'Choose Hot or Iced to add a drink.' },
+  STAFF: { eyebrow: 'Team Menu', title: 'Staff-Price Drinks', hint: 'Choose Hot or Iced. Staff pricing is applied automatically.' },
+  WASTE: { eyebrow: 'Waste Log', title: 'What Was Wasted?', hint: 'Choose Hot or Iced, then log the item.' },
 }
 
 export default function ProductCatalog({ products, mode, onAdd }) {
@@ -23,13 +26,22 @@ export default function ProductCatalog({ products, mode, onAdd }) {
       {products.length ? (
         <div className="product-grid">
           {products.map(product => (
-            <button className="product-button" key={product.id} type="button" onClick={() => onAdd(product)}>
+            <div className="product-button" key={product.id}>
               <span className="product-category">{product.category}</span>
               <span className="product-name">{product.name}</span>
-              <span className="product-price">
-                {mode === 'WASTE' ? 'Log Item' : formatMop(mode === 'STAFF' ? product.staffPrice : product.price)}
-              </span>
-            </button>
+              <div className="product-footer">
+                <span className="product-price">
+                  {mode === 'WASTE' ? 'Log Item' : formatMop(mode === 'STAFF' ? product.staffPrice : product.price)}
+                </span>
+                <div className="temperature-actions" aria-label={`Choose Hot or Iced for ${product.name}`}>
+                  {DRINK_TEMPERATURES.map(temperature => (
+                    <button className="temperature-button" key={temperature} type="button" aria-label={`${TEMPERATURE_LABELS[temperature]} ${product.name}`} onClick={() => onAdd(product, temperature)}>
+                      {TEMPERATURE_LABELS[temperature]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       ) : (

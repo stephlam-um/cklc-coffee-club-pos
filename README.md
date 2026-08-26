@@ -68,7 +68,7 @@ Deploy the Next.js project to Vercel and add the same two environment variables 
 1. Staff taps their name and enters the 4-digit PIN.
 2. A shift opens automatically.
 3. Select Normal Sale, Staff Price, or Waste.
-4. Tap product buttons to add multiple drinks.
+4. Choose **Hot** or **Iced** on a product to add it; hot and iced versions of the same drink are tracked separately.
 5. For paid orders, tap MPay or WeChat Pay. For Waste, select a reason and record it.
 6. At the end of the shift, tap **Close shift**, enter the actual MPay and WeChat totals, and submit.
 
