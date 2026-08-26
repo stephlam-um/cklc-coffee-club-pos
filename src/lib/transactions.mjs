@@ -27,3 +27,12 @@ export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paym
 export function createId(prefix = 'tx') {
   return `${prefix}-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
 }
+
+export function createCheckoutDraft(args) {
+  const id = createId('tx')
+  return {
+    id,
+    transaction: buildTransactionPayload({ ...args, id }),
+    retry: () => buildTransactionPayload({ ...args, id }),
+  }
+}

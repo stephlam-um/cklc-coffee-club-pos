@@ -12,6 +12,7 @@ function doPost(e) {
     if (action !== 'getBootstrap') assertToken_(payload.token);
     let data;
     if (action === 'getBootstrap') data = getBootstrap_();
+    else if (action === 'syncClosedShift') data = syncClosedShift_(payload);
     else if (action === 'getTodayOrders') data = getTodayOrders_();
     else if (action === 'updateOrderStatus') data = updateOrderStatus_(payload);
     else if (action === 'login') data = login_(payload.staffId, payload.pin);
@@ -127,6 +128,32 @@ function closeShift_(payload) {
     }
   }
   throw new Error('Open shift not found');
+}
+
+function syncClosedShift_(payload) {
+  const shift = payload.shift;
+  const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
+  if (!shift || !shift.id || String(shift.status) !== 'CLOSED') throw new Error('Closed shift payload required');
+  const ss = SpreadsheetApp.getActive();
+  const shiftSheet = ensureReportSheet_(ss, 'Report_Shifts', ['shift_id','staff_id','opened_at','closed_at','mpay_expected','wechat_expected','mpay_actual','wechat_actual','difference','note','synced_at']);
+  const transactionSheet = ensureReportSheet_(ss, 'Report_Transactions', ['transaction_id','shift_id','staff_id','type','total','payment_method','waste_reason','fulfillment_status','created_at','items_json','synced_at']);
+  upsertReportRow_(shiftSheet, 1, String(shift.id), [String(shift.id), String(shift.staff_id || ''), shift.opened_at || '', shift.closed_at || '', Number(shift.mpay_expected || 0), Number(shift.wechat_expected || 0), Number(shift.mpay_actual || 0), Number(shift.wechat_actual || 0), Number(shift.difference || 0), String(shift.note || ''), new Date()]);
+  transactions.forEach(tx => upsertReportRow_(transactionSheet, 1, String(tx.id), [String(tx.id), String(tx.shift_id || shift.id), String(tx.staff_id || ''), String(tx.type || ''), Number(tx.total || 0), String(tx.payment_method || ''), String(tx.waste_reason || ''), String(tx.fulfillment_status || ''), tx.created_at || '', JSON.stringify(tx.transaction_items || []), new Date()]));
+  return { shiftId: String(shift.id), transactionCount: transactions.length, status: 'SYNCED' };
+}
+
+function ensureReportSheet_(ss, name, headers) {
+  const sheet = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
+  return sheet;
+}
+
+function upsertReportRow_(sheet, keyColumn, key, row) {
+  const values = sheet.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][keyColumn - 1]) === key) { sheet.getRange(i + 1, 1, 1, row.length).setValues([row]); return; }
+  }
+  sheet.appendRow(row);
 }
 
 function validateTransaction_(tx) {

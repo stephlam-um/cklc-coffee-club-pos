@@ -1,18 +1,31 @@
 import { buildOrderStatusPayload } from './dashboard.mjs'
 
-const endpoint = () => process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || ''
-const token = () => process.env.NEXT_PUBLIC_POS_API_TOKEN || ''
+const routes = {
+  getBootstrap: ['GET', '/api/bootstrap'],
+  login: ['POST', '/api/login'],
+  openShift: ['POST', '/api/shifts/open'],
+  createTransaction: ['POST', '/api/transactions'],
+  closeShift: ['POST', null],
+  getTodayOrders: ['GET', '/api/orders/today'],
+  updateOrderStatus: ['PATCH', null],
+}
 
 async function request(action, data = {}) {
-  if (!endpoint()) throw new Error('NEXT_PUBLIC_APPS_SCRIPT_URL is not configured')
-  const response = await fetch(endpoint(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, token: token(), ...data }),
+  const [method, configuredPath] = routes[action] || []
+  const path = configuredPath || (action === 'closeShift' ? `/api/shifts/${encodeURIComponent(data.shiftId)}/close` : `/api/orders/${encodeURIComponent(data.transactionId)}/status`)
+  const response = await fetch(path, {
+    method,
+    headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: method === 'GET' ? undefined : JSON.stringify(data),
   })
   if (!response.ok) throw new Error(`POS API returned HTTP ${response.status}`)
   const body = await response.json()
-  if (!body.ok) throw new Error(body.error || 'POS API request failed')
+  if (!body.ok) {
+    const error = new Error(body.error || 'POS API request failed')
+    error.code = body.code
+    throw error
+  }
   return body.data
 }
 

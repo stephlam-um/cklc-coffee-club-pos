@@ -1,0 +1,14 @@
+{
+  "name": "Student Coffee POS",
+  "short_name": "Coffee POS",
+  "description": "Fast, friendly point of sale for CKLC Coffee.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f8",
+  "theme_color": "#f5f7f8",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

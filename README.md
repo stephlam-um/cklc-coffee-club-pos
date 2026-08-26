@@ -1,109 +1,95 @@
 # Student Coffee POS
 
-A small tablet/mobile-first POS for a student coffee shop. It supports only three transaction types: **Normal Sale**, **Staff Price**, and **Waste**. Paid transactions use **MPay** or **WeChat Pay**. Staff drinks are paid at `staff_price`; there is no free-cup workflow.
+A tablet/mobile-first POS for a student coffee shop. It supports Normal Sale, Staff Price, and Waste transactions, with MPay and WeChat Pay reconciliation.
 
-## What is included
-- Next.js POS UI with large product buttons and multi-item cart.
-- Staff name + 4-digit PIN login.
-- Normal and staff-price checkout.
-- Waste logging with four reasons.
-- Close-shift reconciliation for MPay and WeChat Pay.
-- Google Apps Script backend with duplicate transaction protection.
-- Spreadsheet bootstrap function that creates the four required tabs.
+## Architecture
 
-## 1. Create the Google Sheet
-Create a blank Google Spreadsheet, then open **Extensions → Apps Script**.
+- Next.js UI and same-origin Route Handlers.
+- Supabase PostgreSQL as the live source of truth.
+- Google Sheets as a reporting destination after a shift closes.
+- Idempotent transaction IDs so network retries cannot create duplicate sales.
+- iPad Safari Web App; no Swift app is required.
 
-Copy `apps-script/Code.gs` into the Apps Script editor. Run `setupSheets()` once and authorize it. It creates:
+## 1. Create Supabase
 
-- `Products`: `id | name | category | price | staff_price | active | sort_order`
-- `Staff`: `id | name | pin | role | active`
-- `Transactions`: `transaction_id | timestamp | shift_id | staff_id | type | items_json | total | payment_method | waste_reason | status | fulfillment_status | completed_at | completed_by`
-- `Shifts`: `shift_id | staff_id | opened_at | closed_at | mpay_expected | wechat_expected | mpay_actual | wechat_actual | difference | note | status`
+Create a Supabase project in a region close to the shop. In the Supabase SQL editor, run these files in order:
 
-Replace the sample Manager record and PIN immediately.
+1. `supabase/migrations/202608260001_initial_pos.sql`
+2. `supabase/seed.sql`
 
-## 2. Add the API token
-In Apps Script, open **Project Settings → Script Properties** and add:
+Copy `.env.example` to `.env.local` and set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and a random `SESSION_SECRET`. These are server-only values; never prefix them with `NEXT_PUBLIC_`.
 
-`POS_API_TOKEN = <a long random secret>`
-
-The same value goes into the frontend environment variable below. This is adequate for a low-risk student-shop v1, but it is a shared secret exposed to the browser and should not be treated as strong authentication.
-
-## 3. Deploy Apps Script
-Use **Deploy → New deployment → Web app**.
-
-- Execute as: Me
-- Who has access: Anyone with the link / the least-permissive option that still allows your POS browsers to call it
-
-Copy the `/exec` URL.
-
-## 4. Configure the frontend
-Copy `.env.example` to `.env.local`:
+Create the first staff account after setting the environment variables:
 
 ```bash
-cp .env.example .env.local
+node scripts/create-staff.mjs staff-001 Manager 1234 MANAGER
 ```
 
-Set:
+Use a real PIN for the shop. The command stores a hash, not the plaintext PIN.
+
+## 2. Configure Google Sheets reporting
+
+Create a reporting spreadsheet and open **Extensions → Apps Script**. Copy `apps-script/Code.gs` into the editor and deploy it as a Web App. Run `setupSheets()` once to create the reporting tabs.
+
+In Apps Script project settings, add a random `POS_API_TOKEN`. Add the URL and token to `.env.local`:
 
 ```text
-NEXT_PUBLIC_APPS_SCRIPT_URL=<your /exec URL>
-NEXT_PUBLIC_POS_API_TOKEN=<same token as Script Properties>
+GOOGLE_SHEETS_SYNC_URL=<your /exec URL>
+GOOGLE_SHEETS_SYNC_TOKEN=<the Apps Script POS_API_TOKEN>
 ```
 
-## 5. Run locally
+The Apps Script deployment is now a reporting receiver. The browser never sends this token.
+
+## 3. Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the local URL on a tablet or phone browser.
+Open the local URL in Safari on the iPad or in a desktop browser.
 
-## 6. Deploy
-Deploy the Next.js project to Vercel and add the same two environment variables in the Vercel project settings.
+## 4. Deploy
 
-## Daily operation
+Deploy the Next.js project to Vercel. Add every value from `.env.local` to the Vercel project environment settings. Keep `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET`, and `GOOGLE_SHEETS_SYNC_TOKEN` server-only.
+
+## 5. Install on iPad
+
+Open the deployed URL in Safari, tap **Share → Add to Home Screen**, enable **Open as Web App**, and tap **Add**. The POS launches from the Home Screen in standalone mode.
+
+Checkout and shift close are disabled while offline. Offline order queuing is intentionally not supported.
+
+## Migration and daily operation
+
+Perform cutover between shifts. Import historical transactions into Supabase, reconcile totals, and then use the new `/api` routes. Keep the old Apps Script write deployment available only during a short rollback window.
+
 1. Staff taps their name and enters the 4-digit PIN.
 2. A shift opens automatically.
 3. Select Normal Sale, Staff Price, or Waste.
-4. Choose **Hot** or **Iced** on a product to add it; hot and iced versions of the same drink are tracked separately.
-5. For paid orders, tap MPay or WeChat Pay. For Waste, select a reason and record it.
-6. At the end of the shift, tap **Close shift**, enter the actual MPay and WeChat totals, and submit.
+4. Choose Hot or Iced on each drink.
+5. For paid orders, tap MPay or WeChat Pay. For Waste, select a reason.
+6. At the end of the shift, tap Close shift and enter actual MPay and WeChat totals.
+
+After close, the shift is durable in Supabase even if Sheets is unavailable. The sync endpoint can retry the same stable shift and transaction IDs.
+
+If a payment request times out, retry the same payment action. The original transaction ID is reused and the database returns the original result instead of creating another sale.
+
+## Future expenses
+
+Expense entry is intentionally not in the POS UI. A later addition can import expenses entered in Google Sheets into a dedicated `expenses` table using a unique source-row ID, without changing the checkout interface.
 
 ## Today’s Orders dashboard
 
-After staff sign in, use the **Today’s Orders** view to sync today’s completed transactions from the `Transactions` sheet. Paid orders appear in the fulfillment queue; Waste entries appear only in the waste summary.
-
-Every paid order has a separate fulfillment state:
-
-- `PENDING`: the order still needs to be made or handed over.
-- `COMPLETED`: staff has confirmed the order was made or handed over.
-
-The dashboard records `completed_at` and `completed_by` when a staff member marks an order complete. Existing transaction `status` values remain unchanged and continue to represent the transaction record itself.
-
-If the Transactions tab already existed before this feature, run `setupSheets()` once after updating `Code.gs`. The script appends any missing fulfillment columns to the end of the tab without deleting existing data.
-
-After editing Apps Script, deploy a new version through **Deploy → Manage deployments → Edit → New version → Deploy**.
-
-## Editing prices or staff
-Edit `Products` or `Staff` directly in Google Sheet. The POS reloads active entries from the sheet when the page opens. No frontend redeploy is required for price/name changes.
+After staff sign in, use Today’s Orders to view completed transactions. Paid orders appear in the fulfillment queue; Waste entries appear in the waste summary. Fulfillment states are `PENDING` and `COMPLETED` and are separate from the transaction record status.
 
 ## Important v1 limits
-This version intentionally has no cash, Alipay, free staff drinks, inventory tracking, scheduling, loyalty system, receipts, or customer accounts.
+
+This version has no cash, Alipay, free staff drinks, inventory tracking, scheduling, loyalty system, receipts, customer accounts, or offline transaction queue.
 
 ## Tests
-Core transaction and pricing logic uses Node's built-in test runner:
 
 ```bash
 npm test
 npm run check:core
-```
-
-A full Next.js build additionally requires the npm dependencies to be installed:
-
-```bash
-npm install
 npm run build
 ```
