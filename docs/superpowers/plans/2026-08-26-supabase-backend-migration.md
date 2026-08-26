@@ -419,7 +419,7 @@ Run: `npm test`; run: `npm run check:core`; run: `npm run build`; run: `git diff
 
 - [ ] **Step 2: Perform a static security audit**
 
-Run: `rg -n "NEXT_PUBLIC_(SUPABASE|POS_API_TOKEN|.*KEY|.*SECRET)|SERVICE_ROLE|pin_hash|SESSION_SECRET" src README.md .env.example` and confirm privileged values occur only in server modules or documentation placeholders. Confirm no plaintext PIN or credential is committed.
+Run: `rg -n "NEXT_PUBLIC_(SUPABASE|POS_API_TOKEN|.*KEY|.*SECRET)|SERVICE_ROLE|pin_hash|SESSION_SECRET" src README.md .env.example` and confirm privileged values occur only in server modules or `.env.example` example values. Confirm no plaintext PIN or credential is committed.
 
 - [ ] **Step 3: Verify the deployment contract**
 
