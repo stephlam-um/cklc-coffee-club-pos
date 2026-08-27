@@ -29,7 +29,7 @@ Use a real PIN for the shop. The command stores a hash, not the plaintext PIN.
 
 ## 2. Configure Google Sheets reporting
 
-Create a reporting spreadsheet and open **Extensions → Apps Script**. Copy `apps-script/Code.gs` into the editor and deploy it as a Web App. Run `setupSheets()` once to create the reporting tabs.
+Create or open the existing reporting spreadsheet and open **Extensions → Apps Script**. Add the daily-export functions from `apps-script/Code.gs` (`exportSupabaseReports`, `setupDailySupabaseExport`, `fetchSupabaseRows_`, and `upsertReportRows_`) to the existing project. Do not run `setupSheets()` and do not recreate or replace your existing `Products` or `Staff` tabs; the daily export only creates or updates `Report_Shifts` and `Report_Transactions`.
 
 In Apps Script project settings, add a random `POS_API_TOKEN`. Add the URL and token to `.env.local`:
 
