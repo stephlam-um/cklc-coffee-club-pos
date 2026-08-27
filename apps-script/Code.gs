@@ -142,6 +142,54 @@ function syncClosedShift_(payload) {
   return { shiftId: String(shift.id), transactionCount: transactions.length, status: 'SYNCED' };
 }
 
+// Run this function manually once after setting the script properties below.
+// It is safe to run repeatedly because report rows are keyed by stable IDs.
+function exportSupabaseReports() {
+  const properties = PropertiesService.getScriptProperties();
+  const supabaseUrl = String(properties.getProperty('SUPABASE_URL') || '').replace(/\/+$/, '');
+  const serviceRoleKey = String(properties.getProperty('SUPABASE_SERVICE_ROLE_KEY') || '');
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured in Script Properties');
+
+  const shifts = fetchSupabaseRows_(supabaseUrl, serviceRoleKey, 'shifts?status=eq.CLOSED&select=id,staff_id,opened_at,closed_at,mpay_expected,wechat_expected,mpay_actual,wechat_actual,difference,note&order=closed_at.asc,id.asc');
+  const closedShiftIds = shifts.reduce((map, shift) => { map[String(shift.id)] = true; return map; }, {});
+  const allTransactions = fetchSupabaseRows_(supabaseUrl, serviceRoleKey, 'transactions?status=eq.COMPLETED&select=id,shift_id,staff_id,type,total,payment_method,waste_reason,fulfillment_status,created_at,transaction_items(*)&order=created_at.asc,id.asc');
+  const transactions = allTransactions.filter(transaction => closedShiftIds[String(transaction.shift_id)]);
+  const syncedAt = new Date();
+  const ss = SpreadsheetApp.getActive();
+  const shiftSheet = ensureReportSheet_(ss, 'Report_Shifts', ['shift_id','staff_id','opened_at','closed_at','mpay_expected','wechat_expected','mpay_actual','wechat_actual','difference','note','synced_at']);
+  const transactionSheet = ensureReportSheet_(ss, 'Report_Transactions', ['transaction_id','shift_id','staff_id','type','total','payment_method','waste_reason','fulfillment_status','created_at','items_json','synced_at']);
+  upsertReportRows_(shiftSheet, 'shift_id', shifts.map(shift => [String(shift.id), String(shift.staff_id || ''), shift.opened_at || '', shift.closed_at || '', Number(shift.mpay_expected || 0), Number(shift.wechat_expected || 0), Number(shift.mpay_actual || 0), Number(shift.wechat_actual || 0), Number(shift.difference || 0), String(shift.note || ''), syncedAt]));
+  upsertReportRows_(transactionSheet, 'transaction_id', transactions.map(transaction => [String(transaction.id), String(transaction.shift_id || ''), String(transaction.staff_id || ''), String(transaction.type || ''), Number(transaction.total || 0), String(transaction.payment_method || ''), String(transaction.waste_reason || ''), String(transaction.fulfillment_status || ''), transaction.created_at || '', JSON.stringify(transaction.transaction_items || []), syncedAt]));
+  return { shiftCount: shifts.length, transactionCount: transactions.length, status: 'EXPORTED', syncedAt: syncedAt.toISOString() };
+}
+
+function setupDailySupabaseExport() {
+  const handler = 'exportSupabaseReports';
+  const triggers = ScriptApp.getProjectTriggers().filter(trigger => trigger.getHandlerFunction() === handler);
+  triggers.slice(1).forEach(trigger => ScriptApp.deleteTrigger(trigger));
+  if (triggers.length === 0) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(3).inTimezone('Asia/Singapore').create();
+  return { handler: handler, triggerCount: 1, timezone: 'Asia/Singapore', hour: 3 };
+}
+
+function fetchSupabaseRows_(supabaseUrl, serviceRoleKey, resource) {
+  const pageSize = 500;
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const separator = resource.indexOf('?') >= 0 ? '&' : '?';
+    const url = supabaseUrl + '/rest/v1/' + resource + separator + 'limit=' + pageSize + '&offset=' + offset;
+    const response = UrlFetchApp.fetch(url, { method: 'get', headers: { apikey: serviceRoleKey, Authorization: 'Bearer ' + serviceRoleKey, Accept: 'application/json' }, muteHttpExceptions: true });
+    const status = response.getResponseCode();
+    if (status < 200 || status >= 300) throw new Error('Supabase export failed: HTTP ' + status);
+    let batch;
+    try { batch = JSON.parse(response.getContentText() || '[]'); } catch (error) { throw new Error('Supabase export returned invalid JSON'); }
+    if (!Array.isArray(batch)) throw new Error('Supabase export returned an unexpected response');
+    rows.push.apply(rows, batch);
+    if (batch.length < pageSize) return rows;
+    offset += pageSize;
+  }
+}
+
 function ensureReportSheet_(ss, name, headers) {
   const sheet = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
@@ -154,6 +202,23 @@ function upsertReportRow_(sheet, keyColumn, key, row) {
     if (String(values[i][keyColumn - 1]) === key) { sheet.getRange(i + 1, 1, 1, row.length).setValues([row]); return; }
   }
   sheet.appendRow(row);
+}
+
+function upsertReportRows_(sheet, keyHeader, rows) {
+  if (!rows.length) return;
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(String);
+  const keyIndex = headers.indexOf(keyHeader);
+  if (keyIndex < 0) throw new Error('Missing report key column: ' + keyHeader);
+  const existing = values.slice(1).map(row => row.slice(0, headers.length));
+  const rowIndexes = {};
+  existing.forEach((row, index) => { rowIndexes[String(row[keyIndex])] = index; });
+  rows.forEach(row => {
+    const key = String(row[keyIndex]);
+    if (Object.prototype.hasOwnProperty.call(rowIndexes, key)) existing[rowIndexes[key]] = row;
+    else { rowIndexes[key] = existing.length; existing.push(row); }
+  });
+  sheet.getRange(2, 1, existing.length, rows[0].length).setValues(existing);
 }
 
 function validateTransaction_(tx) {

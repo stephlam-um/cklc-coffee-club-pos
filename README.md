@@ -40,6 +40,23 @@ GOOGLE_SHEETS_SYNC_TOKEN=<the Apps Script POS_API_TOKEN>
 
 The Apps Script deployment is now a reporting receiver. The browser never sends this token.
 
+### Daily Supabase export
+
+The same Apps Script project can also run a nightly backfill from Supabase into `Report_Shifts` and `Report_Transactions`. This is a reporting job only; Supabase remains the live source of truth.
+
+1. In Apps Script, open **Project Settings → Script properties** and add:
+
+   ```text
+   SUPABASE_URL=https://reyaftglfoskqtxuhfrd.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<server-only Supabase service-role key>
+   ```
+
+   Keep the service-role key in Script Properties only. Do not put it in `Code.gs`, a sheet cell, or the browser bundle.
+2. Run `exportSupabaseReports()` once from the Apps Script editor and approve the requested permissions. The function upserts by `shift_id` and `transaction_id`, so retries do not create duplicate report rows.
+3. Run `setupDailySupabaseExport()` once. It creates one daily trigger for 03:00 in `Asia/Singapore` and removes duplicate triggers for the same handler.
+
+The export reads closed shifts and completed transactions in pages of 500 rows. Old report rows are not deleted, which preserves an audit trail if a transaction is later archived in Supabase.
+
 ## 3. Run locally
 
 ```bash
