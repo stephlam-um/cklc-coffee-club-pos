@@ -1,9 +1,16 @@
-import { calculateCartTotal, getUnitPrice } from './domain.mjs'
+import { calculateCartTotal, getUnitPrice, normalizeTemperature } from './domain.mjs'
 
 export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paymentMethod = '', wasteReason = '' }) {
-  const items = cart.map(({ product, quantity }) => {
+  const items = cart.map(({ product, temperature, quantity }) => {
     const unitPrice = getUnitPrice(product, mode)
-    return { productId: product.id, name: product.name, quantity, unitPrice, lineTotal: unitPrice * quantity }
+    return {
+      productId: product.id,
+      name: product.name,
+      temperature: normalizeTemperature(temperature),
+      quantity,
+      unitPrice,
+      lineTotal: unitPrice * quantity,
+    }
   })
   return {
     transactionId: id,
@@ -19,4 +26,13 @@ export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paym
 
 export function createId(prefix = 'tx') {
   return `${prefix}-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
+}
+
+export function createCheckoutDraft(args) {
+  const id = createId('tx')
+  return {
+    id,
+    transaction: buildTransactionPayload({ ...args, id }),
+    retry: () => buildTransactionPayload({ ...args, id }),
+  }
 }

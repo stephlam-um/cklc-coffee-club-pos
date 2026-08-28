@@ -39,6 +39,7 @@ export default function PosPage() {
   const [cart, setCart] = useState([])
   const [wasteReason, setWasteReason] = useState('MADE_WRONG')
   const [submitting, setSubmitting] = useState(false)
+  const [pendingTransaction, setPendingTransaction] = useState(null)
   const [notice, setNotice] = useState('')
   const [showClose, setShowClose] = useState(false)
   const [actual, setActual] = useState({ mpay: '', wechat: '', note: '' })
@@ -46,18 +47,28 @@ export default function PosPage() {
   const [dashboardData, setDashboardData] = useState(null)
   const [dashboardLoading, setDashboardLoading] = useState(false)
   const [dashboardError, setDashboardError] = useState('')
+  const [online, setOnline] = useState(true)
 
   function loadBootstrap() {
     setLoading(true)
     setBootstrapError('')
     posApi.getBootstrap()
       .then(setBootstrap)
-      .catch(caught => setBootstrapError(`${caught.message}. Check the Apps Script deployment, then try again.`))
+      .catch(caught => setBootstrapError(`${caught.message}. Check the POS server, then try again.`))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
     loadBootstrap()
+    setOnline(typeof navigator === 'undefined' ? true : navigator.onLine)
+    const handleOnline = () => setOnline(true)
+    const handleOffline = () => setOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
   }, [])
 
   const products = useMemo(
@@ -75,7 +86,7 @@ export default function PosPage() {
       const orders = (result.orders || []).map(normalizeDashboardOrder)
       setDashboardData({ ...result, orders, stats: result.stats || dashboardStats(orders) })
     } catch (caught) {
-      setDashboardError(`${caught.message}. Check the Apps Script deployment and try again.`)
+      setDashboardError(`${caught.message}. Check the POS server and try again.`)
     } finally {
       setDashboardLoading(false)
     }
@@ -142,24 +153,31 @@ export default function PosPage() {
     if (!cart.length) return
     if (window.confirm('Clear every item from this ticket?')) {
       setCart([])
+      setPendingTransaction(null)
       setError('')
     }
   }
 
   async function checkout(paymentMethod = '') {
     if (!cart.length || !staff) return
+    if (pendingTransaction && (pendingTransaction.paymentMethod !== paymentMethod || pendingTransaction.type !== mode || pendingTransaction.wasteReason !== wasteReason)) {
+      setError('Retry the same payment method to confirm the existing ticket, or clear it before starting over.')
+      return
+    }
     setSubmitting(true)
     setError('')
     setNotice('')
     try {
-      const transaction = buildTransactionPayload({
+      const transaction = pendingTransaction || buildTransactionPayload({
         id: createId('tx'), shiftId, staffId: staff.id, mode, cart, paymentMethod, wasteReason,
       })
+      if (!pendingTransaction) setPendingTransaction(transaction)
       await posApi.createTransaction(transaction)
       setCart([])
+      setPendingTransaction(null)
       setNotice(mode === 'WASTE' ? 'Waste Recorded. The ticket is ready for the next entry.' : 'Payment Recorded. The counter is ready for the next order.')
     } catch (caught) {
-      setError(`${caught.message}. Your order is still here—check the connection and try again.`)
+      setError(`${caught.code === 'CONFLICTING_TRANSACTION' ? 'This ticket changed while it was being retried.' : 'Couldn’t confirm this payment. Retry to check the same transaction.'} Your order is still here.`)
     } finally {
       setSubmitting(false)
     }
@@ -231,6 +249,7 @@ export default function PosPage() {
         </nav>}
 
         <div className="announcements" aria-live="polite" aria-atomic="true">
+          {!online && <div className="banner error" role="status"><strong>Connection Lost</strong><span>Reconnect before recording payment or closing the shift.</span></div>}
           {error && <div className="banner error" role="alert"><strong>Couldn’t Complete That</strong><span>{error}</span></div>}
           {notice && <div className="banner notice"><strong>All Set</strong><span>{notice}</span></div>}
         </div>
@@ -239,7 +258,7 @@ export default function PosPage() {
           <TodayDashboard data={dashboardData} loading={dashboardLoading} error={dashboardError} staff={staff} onRefresh={loadDashboard} onUpdateStatus={updateOrderStatus} />
         ) : <main className="workspace" id="main-content">
           <div className="catalog-column">
-            <ProductCatalog products={products} mode={mode} onAdd={product => setCart(addProduct(cart, product))} />
+            <ProductCatalog products={products} mode={mode} onAdd={(product, temperature) => setCart(current => addProduct(current, product, temperature))} />
             {mode === 'WASTE' && (
               <section className="reason-wrap" aria-labelledby="waste-reason-title">
                 <div><p className="eyebrow">Required Detail</p><h2 id="waste-reason-title">Why Was It Wasted?</h2></div>
@@ -257,7 +276,8 @@ export default function PosPage() {
             mode={mode}
             total={total}
             submitting={submitting}
-            onChangeQuantity={(productId, delta) => setCart(changeQuantity(cart, productId, delta))}
+            online={online}
+            onChangeQuantity={(productId, temperature, delta) => setCart(current => changeQuantity(current, productId, temperature, delta))}
             onClear={clearCart}
             onCheckout={checkout}
           />

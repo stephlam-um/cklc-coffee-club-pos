@@ -1,6 +1,6 @@
-import { formatMop, paymentActionLabel } from '@/lib/presentation.mjs'
+import { formatMop, formatTemperature, paymentActionLabel } from '@/lib/presentation.mjs'
 
-export default function OrderTicket({ cart, mode, total, submitting, onChangeQuantity, onClear, onCheckout }) {
+export default function OrderTicket({ cart, mode, total, submitting, online = true, onChangeQuantity, onClear, onCheckout }) {
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0)
 
   return (
@@ -22,15 +22,15 @@ export default function OrderTicket({ cart, mode, total, submitting, onChangeQua
         {cart.length ? cart.map(line => {
           const unitPrice = mode === 'STAFF' ? line.product.staffPrice : line.product.price
           return (
-            <div className="cart-line" key={line.product.id}>
+            <div className="cart-line" key={`${line.product.id}-${line.temperature}`}>
               <div className="line-copy">
                 <strong>{line.product.name}</strong>
-                <small>{mode === 'WASTE' ? line.product.category : `${formatMop(unitPrice)} Each`}</small>
+                <small>{[formatTemperature(line.temperature), mode === 'WASTE' ? line.product.category : `${formatMop(unitPrice)} Each`].filter(Boolean).join(' · ')}</small>
               </div>
-              <div className="qty" aria-label={`Quantity for ${line.product.name}`}>
-                <button type="button" aria-label={`Remove one ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, -1)}>−</button>
+              <div className="qty" aria-label={`Quantity for ${formatTemperature(line.temperature)} ${line.product.name}`}>
+                <button type="button" aria-label={`Remove one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, -1)}>−</button>
                 <output aria-live="polite">{line.quantity}</output>
-                <button type="button" aria-label={`Add one ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, 1)}>+</button>
+                <button type="button" aria-label={`Add one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, 1)}>+</button>
               </div>
             </div>
           )
@@ -46,15 +46,15 @@ export default function OrderTicket({ cart, mode, total, submitting, onChangeQua
       <div className="checkout">
         <div className="total"><span>Total</span><strong>{formatMop(total)}</strong></div>
         {mode === 'WASTE' ? (
-          <button className="button waste-action full-width" type="button" disabled={!cart.length || submitting} onClick={() => onCheckout()}>
+          <button className="button waste-action full-width" type="button" disabled={!cart.length || submitting || !online} onClick={() => onCheckout()}>
             {submitting ? 'Recording Waste…' : `Record ${itemCount || 0} Waste Item${itemCount === 1 ? '' : 's'}`}
           </button>
         ) : (
           <div className="payments">
-            <button type="button" disabled={!cart.length || submitting} onClick={() => onCheckout('MPAY')}>
+            <button type="button" disabled={!cart.length || submitting || !online} onClick={() => onCheckout('MPAY')}>
               <span>MPay</span><small>{submitting ? 'Recording…' : paymentActionLabel(total, 'MPay')}</small>
             </button>
-            <button type="button" disabled={!cart.length || submitting} onClick={() => onCheckout('WECHAT_PAY')}>
+            <button type="button" disabled={!cart.length || submitting || !online} onClick={() => onCheckout('WECHAT_PAY')}>
               <span>WeChat Pay</span><small>{submitting ? 'Recording…' : paymentActionLabel(total, 'WeChat Pay')}</small>
             </button>
           </div>

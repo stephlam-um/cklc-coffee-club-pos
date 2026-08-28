@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { dashboardStats, normalizeDashboardOrder, sortDashboardOrders } from '@/lib/dashboard.mjs'
-import { formatMop } from '@/lib/presentation.mjs'
+import { formatMop, formatTemperature } from '@/lib/presentation.mjs'
 
 const PAYMENT_LABELS = { MPAY: 'MPay', WECHAT_PAY: 'WeChat Pay' }
 const WASTE_LABELS = { MADE_WRONG: 'Made Wrong', CALIBRATION: 'Calibration', SPILLED: 'Spilled', OTHER: 'Other' }
@@ -50,7 +50,7 @@ export default function TodayDashboard({ data, loading, error, staff, onRefresh,
         </div>
         <div className="dashboard-order-body">
           <div className="dashboard-order-items">
-            {order.items.map(item => <div key={`${order.transactionId}-${item.productId}`}><span>{item.quantity} × {item.name}</span><small>{formatMop(item.lineTotal)}</small></div>)}
+            {order.items.map((item, index) => <div key={`${order.transactionId}-${item.productId}-${item.temperature || 'legacy'}-${index}`}><span>{item.quantity} × {item.name}{item.temperature && <em> · {formatTemperature(item.temperature)}</em>}</span><small>{formatMop(item.lineTotal)}</small></div>)}
           </div>
           <div className="dashboard-order-meta"><span>{PAYMENT_LABELS[order.paymentMethod] || 'No payment'}</span><span>By {order.staffName}</span><span>#{order.transactionId.slice(-6)}</span></div>
         </div>

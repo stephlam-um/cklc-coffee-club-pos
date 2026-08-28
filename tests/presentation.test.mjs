@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatMop, getInitials, parseShiftAmount, paymentActionLabel, possessiveName } from '../src/lib/presentation.mjs'
+import { formatMop, formatTemperature, getInitials, parseShiftAmount, paymentActionLabel, possessiveName } from '../src/lib/presentation.mjs'
 
 test('formatMop presents POS totals as Macau patacas with two decimals', () => {
   assert.equal(formatMop(75), 'MOP\u00a075.00')
@@ -10,6 +10,12 @@ test('formatMop presents POS totals as Macau patacas with two decimals', () => {
 test('paymentActionLabel names the amount and payment method', () => {
   assert.equal(paymentActionLabel(75, 'MPay'), 'Pay MOP\u00a075.00 with MPay')
   assert.equal(paymentActionLabel(75, 'WeChat Pay'), 'Pay MOP\u00a075.00 with WeChat Pay')
+})
+
+test('formatTemperature gives drink choices a readable label', () => {
+  assert.equal(formatTemperature('HOT'), 'Hot')
+  assert.equal(formatTemperature('ICED'), 'Iced')
+  assert.equal(formatTemperature(''), '')
 })
 
 test('getInitials creates a compact staff-card label', () => {
