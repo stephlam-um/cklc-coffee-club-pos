@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import CloseShiftDialog from '@/components/pos/CloseShiftDialog'
 import OrderTicket from '@/components/pos/OrderTicket'
 import PosHeader from '@/components/pos/PosHeader'
@@ -11,7 +11,14 @@ import { dashboardStats, normalizeDashboardOrder } from '@/lib/dashboard.mjs'
 import { addProduct, calculateCartTotal, changeQuantity, WASTE_REASONS } from '@/lib/domain.mjs'
 import { posApi } from '@/lib/api.mjs'
 import { formatMop, parseShiftAmount } from '@/lib/presentation.mjs'
-import { buildTransactionPayload, createId } from '@/lib/transactions.mjs'
+import {
+  buildTransactionPayload,
+  clearPendingTransaction,
+  createId,
+  loadPendingTransaction,
+  restoreCheckoutDraft,
+  savePendingTransaction,
+} from '@/lib/transactions.mjs'
 
 const MODES = [
   { id: 'NORMAL_SALE', label: 'Sale', description: 'Regular Price' },
@@ -48,6 +55,7 @@ export default function PosPage() {
   const [dashboardLoading, setDashboardLoading] = useState(false)
   const [dashboardError, setDashboardError] = useState('')
   const [online, setOnline] = useState(true)
+  const checkoutInFlight = useRef(false)
 
   function loadBootstrap() {
     setLoading(true)
@@ -85,8 +93,10 @@ export default function PosPage() {
       const result = await posApi.getTodayOrders()
       const orders = (result.orders || []).map(normalizeDashboardOrder)
       setDashboardData({ ...result, orders, stats: result.stats || dashboardStats(orders) })
+      return true
     } catch (caught) {
       setDashboardError(`${caught.message}. Check the POS server and try again.`)
+      return false
     } finally {
       setDashboardLoading(false)
     }
@@ -116,6 +126,17 @@ export default function PosPage() {
       const shift = await posApi.openShift(result.staff.id)
       setStaff(result.staff)
       setShiftId(shift.shiftId)
+      try {
+        const pending = loadPendingTransaction(window.localStorage, { staffId: result.staff.id, shiftId: shift.shiftId })
+        const restored = pending ? restoreCheckoutDraft(bootstrap.products, pending) : null
+        if (restored) {
+          setPendingTransaction(pending)
+          setCart(restored.cart)
+          setMode(restored.mode)
+          setWasteReason(restored.wasteReason)
+          setNotice('Unconfirmed ticket restored. Retry the same payment or clear it.')
+        }
+      } catch {}
       setActiveView('POS')
       setPinFor(null)
       setPin('')
@@ -150,8 +171,9 @@ export default function PosPage() {
   }
 
   function clearCart() {
-    if (!cart.length) return
+    if (!cart.length && !pendingTransaction) return
     if (window.confirm('Clear every item from this ticket?')) {
+      try { clearPendingTransaction(window.localStorage, pendingTransaction) } catch {}
       setCart([])
       setPendingTransaction(null)
       setError('')
@@ -160,10 +182,12 @@ export default function PosPage() {
 
   async function checkout(paymentMethod = '') {
     if (!cart.length || !staff) return
+    if (checkoutInFlight.current) return
     if (pendingTransaction && (pendingTransaction.paymentMethod !== paymentMethod || pendingTransaction.type !== mode || pendingTransaction.wasteReason !== wasteReason)) {
       setError('Retry the same payment method to confirm the existing ticket, or clear it before starting over.')
       return
     }
+    checkoutInFlight.current = true
     setSubmitting(true)
     setError('')
     setNotice('')
@@ -171,14 +195,22 @@ export default function PosPage() {
       const transaction = pendingTransaction || buildTransactionPayload({
         id: createId('tx'), shiftId, staffId: staff.id, mode, cart, paymentMethod, wasteReason,
       })
-      if (!pendingTransaction) setPendingTransaction(transaction)
+      if (!pendingTransaction) {
+        setPendingTransaction(transaction)
+        try { savePendingTransaction(window.localStorage, transaction) } catch {}
+      }
       await posApi.createTransaction(transaction)
+      try { clearPendingTransaction(window.localStorage, transaction) } catch {}
       setCart([])
       setPendingTransaction(null)
-      setNotice(mode === 'WASTE' ? 'Waste Recorded. The ticket is ready for the next entry.' : 'Payment Recorded. The counter is ready for the next order.')
+      setNotice(transaction.type === 'WASTE' ? 'Waste recorded. Loading today’s orders…' : 'Payment recorded. Loading today’s orders…')
+      setActiveView('DASHBOARD')
+      const refreshed = await loadDashboard()
+      if (!refreshed) setNotice(transaction.type === 'WASTE' ? 'Waste recorded. Tap Sync Today to refresh the order list.' : 'Payment recorded. Tap Sync Today to refresh the order list.')
     } catch (caught) {
       setError(`${caught.code === 'CONFLICTING_TRANSACTION' ? 'This ticket changed while it was being retried.' : 'Couldn’t confirm this payment. Retry to check the same transaction.'} Your order is still here.`)
     } finally {
+      checkoutInFlight.current = false
       setSubmitting(false)
     }
   }
@@ -276,6 +308,7 @@ export default function PosPage() {
             mode={mode}
             total={total}
             submitting={submitting}
+            pending={Boolean(pendingTransaction)}
             online={online}
             onChangeQuantity={(productId, temperature, delta) => setCart(current => changeQuantity(current, productId, temperature, delta))}
             onClear={clearCart}
