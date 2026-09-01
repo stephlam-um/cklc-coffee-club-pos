@@ -14,13 +14,18 @@ function setupExpenseAutomation() {
 
   for (var i = 0; i < triggers.length; i += 1) {
     var trigger = triggers[i]
-    var handler = trigger && typeof trigger.getHandlerFunction === 'function' ? trigger.getHandlerFunction() : ''
-    if (handler !== 'onExpenseFormSubmit') continue
+    if (!expenseIsExpenseSubmitTrigger_(trigger)) continue
     if (!keptTrigger) {
       keptTrigger = trigger
       continue
     }
     if (typeof ScriptApp.deleteTrigger === 'function') ScriptApp.deleteTrigger(trigger)
+  }
+
+  for (var j = 0; j < triggers.length; j += 1) {
+    var candidateTrigger = triggers[j]
+    if (!expenseHasSubmitHandlerName_(candidateTrigger) || expenseIsExpenseSubmitTrigger_(candidateTrigger)) continue
+    if (typeof ScriptApp.deleteTrigger === 'function') ScriptApp.deleteTrigger(candidateTrigger)
   }
 
   if (!keptTrigger && typeof ScriptApp !== 'undefined' && ScriptApp && typeof ScriptApp.newTrigger === 'function') {
@@ -385,4 +390,17 @@ function expenseFileExtension_(fileName) {
 function expenseDateFolderPart_(value, start, end, fallback) {
   var dateText = expenseFormatLocalDate_(value)
   return dateText ? dateText.slice(start, end) : fallback
+}
+
+function expenseHasSubmitHandlerName_(trigger) {
+  return trigger && typeof trigger.getHandlerFunction === 'function' && trigger.getHandlerFunction() === 'onExpenseFormSubmit'
+}
+
+function expenseIsExpenseSubmitTrigger_(trigger) {
+  if (!expenseHasSubmitHandlerName_(trigger)) return false
+  var triggerSource = trigger && typeof trigger.getTriggerSource === 'function' ? trigger.getTriggerSource() : ''
+  var eventType = trigger && typeof trigger.getEventType === 'function' ? trigger.getEventType() : ''
+  var spreadsheetSource = typeof ScriptApp !== 'undefined' && ScriptApp && ScriptApp.TriggerSource ? ScriptApp.TriggerSource.SPREADSHEETS : 'SPREADSHEETS'
+  var formSubmitEvent = typeof ScriptApp !== 'undefined' && ScriptApp && ScriptApp.EventType ? ScriptApp.EventType.ON_FORM_SUBMIT : 'ON_FORM_SUBMIT'
+  return triggerSource === spreadsheetSource && eventType === formSubmitEvent
 }

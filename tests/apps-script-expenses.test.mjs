@@ -7,6 +7,14 @@ const expensesPath = new URL('../apps-script/expenses.gs', import.meta.url)
 const expensesCode = fs.existsSync(expensesPath) ? fs.readFileSync(expensesPath, 'utf8') : ''
 
 function createHarness() {
+  function makeTrigger(handler, source = 'SPREADSHEETS', eventType = 'ON_FORM_SUBMIT') {
+    return {
+      getHandlerFunction: () => handler,
+      getTriggerSource: () => source,
+      getEventType: () => eventType,
+    }
+  }
+
   class Sheet {
     constructor(name, rows = [], sheetId = 1) {
       this.name = name
@@ -120,6 +128,7 @@ function createHarness() {
   files.set('receipt-1', new File('receipt-1', 'receipt-1.jpg', 'https://drive.google.com/file/d/receipt-1/view'))
 
   const spreadsheet = {
+    getId: () => 'spreadsheet-1',
     getSheetByName: name => sheets.get(name) || null,
     insertSheet: name => {
       const newSheet = new Sheet(name, [], sheets.size + 100)
@@ -159,13 +168,31 @@ function createHarness() {
     },
     PropertiesService: { getScriptProperties: () => ({ getProperty: key => scriptProperties[key] || '', setProperty: (key, value) => { scriptProperties[key] = value } }) },
     ScriptApp: {
+      EventType: { ON_FORM_SUBMIT: 'ON_FORM_SUBMIT' },
+      TriggerSource: { SPREADSHEETS: 'SPREADSHEETS', CLOCK: 'CLOCK' },
       getProjectTriggers: () => existingTriggers,
       deleteTrigger: trigger => {
         const index = existingTriggers.indexOf(trigger)
         if (index >= 0) existingTriggers.splice(index, 1)
         deletedTriggers += 1
       },
-      newTrigger: () => ({ forSpreadsheet: () => ({ onFormSubmit: () => ({ create() { createdTriggers += 1; return { getHandlerFunction: () => 'onExpenseFormSubmit' } } }) }) }),
+      newTrigger: handler => ({
+        forSpreadsheet: spreadsheetArg => ({
+          onFormSubmit: () => ({
+            create() {
+              createdTriggers += 1
+              const trigger = makeTrigger(
+                handler,
+                'SPREADSHEETS',
+                'ON_FORM_SUBMIT',
+              )
+              trigger.spreadsheetId = spreadsheetArg && typeof spreadsheetArg.getId === 'function' ? spreadsheetArg.getId() : null
+              existingTriggers.push(trigger)
+              return trigger
+            },
+          }),
+        }),
+      }),
     },
     LockService: {
       getDocumentLock: () => ({
@@ -220,6 +247,7 @@ function createHarness() {
     rootFolder,
     scriptProperties,
     existingTriggers,
+    makeTrigger,
     get createdTriggers() { return createdTriggers },
     get deletedTriggers() { return deletedTriggers },
     get lockWaits() { return lockWaits },
@@ -351,10 +379,10 @@ test('submit keeps the tracker row when drive setup is unavailable', () => {
 })
 
 test('setup removes duplicate triggers and creates one form-submit trigger', () => {
-  const { context, sheets, existingTriggers } = createHarness()
-  const keptTrigger = { getHandlerFunction: () => 'onExpenseFormSubmit' }
-  const duplicateTrigger = { getHandlerFunction: () => 'onExpenseFormSubmit' }
-  const otherTrigger = { getHandlerFunction: () => 'onOtherSubmit' }
+  const { context, sheets, existingTriggers, makeTrigger } = createHarness()
+  const keptTrigger = makeTrigger('onExpenseFormSubmit')
+  const duplicateTrigger = makeTrigger('onExpenseFormSubmit')
+  const otherTrigger = makeTrigger('onOtherSubmit')
   existingTriggers.push(keptTrigger, duplicateTrigger, otherTrigger)
 
   const result = context.setupExpenseAutomation()
@@ -371,11 +399,11 @@ test('setup removes duplicate triggers and creates one form-submit trigger', () 
 
 test('setup applies status validation and deduplicates existing submit triggers', () => {
   const harness = createHarness()
-  const { context, sheets, existingTriggers } = harness
+  const { context, sheets, existingTriggers, makeTrigger } = harness
   existingTriggers.push(
-    { getHandlerFunction: () => 'onExpenseFormSubmit' },
-    { getHandlerFunction: () => 'onExpenseFormSubmit' },
-    { getHandlerFunction: () => 'someOtherHandler' },
+    makeTrigger('onExpenseFormSubmit'),
+    makeTrigger('onExpenseFormSubmit'),
+    makeTrigger('someOtherHandler'),
   )
 
   const result = context.setupExpenseAutomation()
@@ -392,4 +420,23 @@ test('setup applies status validation and deduplicates existing submit triggers'
     numColumns: 1,
     validation: { values: ['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED', 'PAID'], allowInvalid: true },
   })
+})
+
+test('setup replaces an incompatible same-name trigger with one spreadsheet form-submit trigger', () => {
+  const harness = createHarness()
+  const { context, existingTriggers, makeTrigger } = harness
+  existingTriggers.push(
+    makeTrigger('onExpenseFormSubmit', 'CLOCK', 'CLOCK'),
+    makeTrigger('onOtherSubmit', 'SPREADSHEETS', 'ON_FORM_SUBMIT'),
+  )
+
+  const result = context.setupExpenseAutomation()
+  const matchingTriggers = existingTriggers.filter(trigger => trigger.getHandlerFunction() === 'onExpenseFormSubmit')
+
+  assert.equal(result.triggerCount, 1)
+  assert.equal(harness.deletedTriggers, 1)
+  assert.equal(harness.createdTriggers, 1)
+  assert.equal(matchingTriggers.length, 1)
+  assert.equal(matchingTriggers[0].getTriggerSource(), 'SPREADSHEETS')
+  assert.equal(matchingTriggers[0].getEventType(), 'ON_FORM_SUBMIT')
 })
