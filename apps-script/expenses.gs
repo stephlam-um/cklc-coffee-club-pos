@@ -8,7 +8,8 @@ function expenseNormalizeResponse_(event) {
   const row = expenseGetSourceRow_(event)
   const sheetId = expenseGetSourceSheetId_(event)
   const sourceKey = sheetId + ':' + row
-  const submittedAt = expenseParseTimestamp_(expenseReadNamedValue_(namedValues, ['Timestamp']))
+  const submittedAtText = expenseReadNamedValue_(namedValues, ['Timestamp'])
+  const submittedAt = expenseParseTimestamp_(submittedAtText)
   const memberName = expenseReadNamedValue_(namedValues, ['Member name'])
   const memberEmail = expenseReadNamedValue_(namedValues, ['Email Address', 'Email'])
   const purchaseDate = expenseParseDateOnly_(expenseReadNamedValue_(namedValues, ['Purchase date']))
@@ -95,16 +96,19 @@ function expenseParseCategory_(value) {
 }
 
 function expenseParseReceiptUrls_(value) {
-  var rawText = ''
   var uniqueUrls = Array.isArray(value) && typeof value.slice === 'function' ? value.slice(0, 0) : []
-  if (Array.isArray(value) && value.length) rawText = String(value[0] || '')
-  else if (typeof value === 'string') rawText = value
-  if (!rawText) return uniqueUrls
-  var matches = rawText.match(/https?:\/\/[^\s,]+/g)
-  if (!matches) return uniqueUrls
-  for (var i = 0; i < matches.length; i += 1) {
-    var url = matches[i].trim()
-    if (url && uniqueUrls.indexOf(url) < 0) uniqueUrls.push(url)
+  var inputs = []
+  if (Array.isArray(value)) inputs = value
+  else if (typeof value === 'string') inputs = [value]
+  for (var i = 0; i < inputs.length; i += 1) {
+    var rawText = String(inputs[i] || '')
+    if (!rawText) continue
+    var matches = rawText.match(/https?:\/\/[^\s,]+/g)
+    if (!matches) continue
+    for (var j = 0; j < matches.length; j += 1) {
+      var url = matches[j].trim()
+      if (url && uniqueUrls.indexOf(url) < 0) uniqueUrls.push(url)
+    }
   }
   return uniqueUrls
 }
@@ -115,8 +119,7 @@ function expenseParseTimestamp_(value) {
 }
 
 function expenseParseDateOnly_(value) {
-  var date = expenseParseDateValue_(value)
-  return date ? date.toISOString().slice(0, 10) : ''
+  return expenseFormatLocalDate_(value)
 }
 
 function expenseParseDateValue_(value) {
@@ -126,8 +129,8 @@ function expenseParseDateValue_(value) {
 }
 
 function expenseDateKeyFromValue_(value) {
-  var date = expenseParseDateValue_(value)
-  return date ? date.toISOString().slice(0, 10).replace(/-/g, '') : '00000000'
+  var dateText = expenseFormatLocalDate_(value)
+  return dateText ? dateText.replace(/-/g, '') : '00000000'
 }
 
 function expenseGetSourceRow_(event) {
@@ -145,4 +148,20 @@ function expenseGetSourceSheetId_(event) {
 
 function expenseNowIso_() {
   return new Date().toISOString()
+}
+
+function expenseFormatLocalDate_(value) {
+  if (!value) return ''
+  if (typeof value === 'string') {
+    var trimmed = value.trim()
+    var isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (isoMatch) return isoMatch[1] + '-' + isoMatch[2] + '-' + isoMatch[3]
+    var slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\b|$)/)
+    if (slashMatch) {
+      return slashMatch[3] + '-' + String(Number(slashMatch[1])).padStart(2, '0') + '-' + String(Number(slashMatch[2])).padStart(2, '0')
+    }
+  }
+  var date = expenseParseDateValue_(value)
+  if (!date) return ''
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0')
 }

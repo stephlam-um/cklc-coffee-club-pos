@@ -189,6 +189,45 @@ test('marks an incomplete response as NEEDS_INFO instead of dropping it', () => 
   assert.match(claim.managerNote, /amount|receipt/i)
 })
 
+test('preserves the local purchase date and expense ID date key for date-only values', () => {
+  const { context, event } = createHarness()
+  const localDateEvent = {
+    ...event,
+    namedValues: {
+      ...event.namedValues,
+      Timestamp: ['9/1/2026 00:30:00'],
+      'Purchase date': ['9/1/2026'],
+    },
+  }
+
+  const claim = context.expenseNormalizeResponse_(localDateEvent)
+  const expenseId = context.buildExpenseId_(claim.purchaseDate, localDateEvent.range.getRow())
+
+  assert.equal(claim.purchaseDate, '2026-09-01')
+  assert.equal(expenseId, 'EXP-20260901-0007')
+})
+
+test('preserves every uploaded receipt URL when Forms supplies multiple values', () => {
+  const { context, event } = createHarness()
+  const multipleReceiptsEvent = {
+    ...event,
+    namedValues: {
+      ...event.namedValues,
+      Receipt: [
+        'https://drive.google.com/file/d/receipt-1/view',
+        'https://drive.google.com/file/d/receipt-2/view',
+      ],
+    },
+  }
+
+  const claim = context.expenseNormalizeResponse_(multipleReceiptsEvent)
+
+  assert.deepEqual(claim.receiptUrls, [
+    'https://drive.google.com/file/d/receipt-1/view',
+    'https://drive.google.com/file/d/receipt-2/view',
+  ])
+})
+
 test('builds a monthly Markdown report with totals and receipt links', () => {
   const { context } = createHarness()
   const markdown = context.buildExpenseMarkdownReport_([
