@@ -2,6 +2,62 @@ const EXPENSE_TRACKER_SHEET_NAME = 'Expenses_Tracker'
 const EXPENSE_STATUSES = ['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED', 'PAID']
 const EXPENSE_CATEGORIES = ['Ingredients', 'Supplies', 'Other']
 const EXPENSE_HEADERS = ['expense_id', 'source_key', 'submitted_at', 'member_name', 'member_email', 'purchase_date', 'vendor', 'amount', 'category', 'description', 'receipt_url', 'status', 'manager_note', 'approved_by', 'approved_at', 'paid_by', 'paid_at', 'payment_reference', 'updated_at']
+const EXPENSE_STATUS_COLUMN_INDEX = 12
+const EXPENSE_ROOT_FOLDER_PROPERTY = 'EXPENSE_ROOT_FOLDER_ID'
+
+function setupExpenseAutomation() {
+  var trackerSheet = ensureExpenseTrackerSheet_()
+  var triggers = typeof ScriptApp !== 'undefined' && ScriptApp && typeof ScriptApp.getProjectTriggers === 'function'
+    ? ScriptApp.getProjectTriggers()
+    : []
+  var keptTrigger = null
+
+  for (var i = 0; i < triggers.length; i += 1) {
+    var trigger = triggers[i]
+    var handler = trigger && typeof trigger.getHandlerFunction === 'function' ? trigger.getHandlerFunction() : ''
+    if (handler !== 'onExpenseFormSubmit') continue
+    if (!keptTrigger) {
+      keptTrigger = trigger
+      continue
+    }
+    if (typeof ScriptApp.deleteTrigger === 'function') ScriptApp.deleteTrigger(trigger)
+  }
+
+  if (!keptTrigger && typeof ScriptApp !== 'undefined' && ScriptApp && typeof ScriptApp.newTrigger === 'function') {
+    ScriptApp
+      .newTrigger('onExpenseFormSubmit')
+      .forSpreadsheet(SpreadsheetApp.getActive())
+      .onFormSubmit()
+      .create()
+  }
+
+  return { trackerSheet: EXPENSE_TRACKER_SHEET_NAME, triggerCount: 1 }
+}
+
+function onExpenseFormSubmit(event) {
+  var lock = typeof LockService !== 'undefined' && LockService && typeof LockService.getDocumentLock === 'function'
+    ? LockService.getDocumentLock()
+    : null
+
+  try {
+    if (lock && typeof lock.waitLock === 'function') lock.waitLock(30000)
+    var trackerSheet = ensureExpenseTrackerSheet_()
+    var claim = expenseNormalizeResponse_(event)
+    var duplicateRecord = expenseFindTrackerRowBySourceKey_(trackerSheet, claim.sourceKey)
+
+    if (duplicateRecord) return { expenseId: duplicateRecord.expenseId, duplicate: true }
+
+    var expenseId = buildExpenseId_(claim.submittedAt, expenseGetSourceRow_(event))
+    var organization = organizeExpenseReceipts_(claim, expenseId)
+    var trackerClaim = expenseMergeTrackerClaim_(claim, organization)
+
+    trackerSheet.appendRow(expenseBuildTrackerRow_(trackerClaim, expenseId, trackerClaim.receiptUrls.join(', ')))
+
+    return { expenseId: expenseId, duplicate: false }
+  } finally {
+    if (lock && typeof lock.releaseLock === 'function') lock.releaseLock()
+  }
+}
 
 function expenseNormalizeResponse_(event) {
   const namedValues = event && event.namedValues ? event.namedValues : {}
@@ -72,6 +128,53 @@ function buildExpenseId_(submittedAt, sourceRow) {
   const rowNumber = Number(sourceRow)
   const paddedRow = isFinite(rowNumber) && rowNumber > 0 ? String(Math.floor(rowNumber)).padStart(4, '0') : '0000'
   return 'EXP-' + datePart + '-' + paddedRow
+}
+
+function organizeExpenseReceipts_(claim, expenseId) {
+  var originalUrls = claim && Array.isArray(claim.receiptUrls) ? claim.receiptUrls.slice() : []
+  var properties = typeof PropertiesService !== 'undefined' && PropertiesService && typeof PropertiesService.getScriptProperties === 'function'
+    ? PropertiesService.getScriptProperties()
+    : null
+  var rootFolderId = properties && typeof properties.getProperty === 'function'
+    ? properties.getProperty(EXPENSE_ROOT_FOLDER_PROPERTY)
+    : ''
+
+  if (!rootFolderId) return { urls: originalUrls, error: 'Missing expense root folder configuration.' }
+
+  try {
+    var rootFolder = DriveApp.getFolderById(rootFolderId)
+    var folderDate = claim && claim.purchaseDate ? claim.purchaseDate : claim && claim.submittedAt ? claim.submittedAt : ''
+    var yearKey = expenseDateFolderPart_(folderDate, 0, 4, '0000')
+    var monthKey = expenseDateFolderPart_(folderDate, 5, 7, '00')
+    var yearFolder = expenseGetOrCreateFolderByName_(rootFolder, yearKey)
+    var monthFolder = expenseGetOrCreateFolderByName_(yearFolder, monthKey)
+    var claimFolder = expenseGetOrCreateFolderByName_(monthFolder, expenseBuildClaimFolderName_(expenseId, claim))
+    var movedUrls = []
+    var errors = []
+
+    for (var i = 0; i < originalUrls.length; i += 1) {
+      var originalUrl = originalUrls[i]
+      try {
+        var fileId = expenseExtractDriveFileId_(originalUrl)
+        if (!fileId) throw new Error('invalid receipt URL')
+        var file = DriveApp.getFileById(fileId)
+        var fileName = file && typeof file.getName === 'function' ? file.getName() : ''
+        var extension = expenseFileExtension_(fileName)
+        if (extension && typeof file.setName === 'function') {
+          file.setName(expenseId + '_' + String(i + 1).padStart(2, '0') + extension)
+        }
+        if (file && typeof file.moveTo === 'function') file.moveTo(claimFolder)
+        movedUrls.push(file && typeof file.getUrl === 'function' ? file.getUrl() : originalUrl)
+      } catch (error) {
+        movedUrls.push(originalUrl)
+        errors.push('Receipt organization failed for ' + (expenseExtractDriveFileId_(originalUrl) || ('file ' + String(i + 1))))
+      }
+    }
+
+    return { urls: movedUrls, error: errors.join('; ') }
+  } catch (error) {
+    return { urls: originalUrls, error: 'Expense receipt folder setup failed.' }
+  }
 }
 
 function expenseReadNamedValue_(namedValues, keys) {
@@ -198,4 +301,88 @@ function expenseGetDateParts_(date) {
 function expenseGetScriptTimeZone_() {
   if (typeof Session !== 'undefined' && Session && typeof Session.getScriptTimeZone === 'function') return Session.getScriptTimeZone()
   return 'UTC'
+}
+
+function ensureExpenseTrackerSheet_() {
+  var spreadsheet = SpreadsheetApp.getActive()
+  var trackerSheet = spreadsheet.getSheetByName(EXPENSE_TRACKER_SHEET_NAME)
+  if (!trackerSheet) trackerSheet = spreadsheet.insertSheet(EXPENSE_TRACKER_SHEET_NAME)
+  if (trackerSheet.getLastRow() === 0) trackerSheet.appendRow(EXPENSE_HEADERS)
+  if (typeof trackerSheet.setFrozenRows === 'function') trackerSheet.setFrozenRows(1)
+  expenseApplyStatusValidation_(trackerSheet)
+  return trackerSheet
+}
+
+function expenseApplyStatusValidation_(trackerSheet) {
+  if (!trackerSheet || typeof trackerSheet.getRange !== 'function' || typeof SpreadsheetApp === 'undefined' || !SpreadsheetApp || typeof SpreadsheetApp.newDataValidation !== 'function') return
+  var validation = SpreadsheetApp
+    .newDataValidation()
+    .requireValueInList(EXPENSE_STATUSES)
+    .setAllowInvalid(true)
+    .build()
+  trackerSheet.getRange(2, EXPENSE_STATUS_COLUMN_INDEX, 999, 1).setDataValidation(validation)
+}
+
+function expenseFindTrackerRowBySourceKey_(trackerSheet, sourceKey) {
+  if (!trackerSheet || !sourceKey || typeof trackerSheet.getLastRow !== 'function' || trackerSheet.getLastRow() < 2) return null
+  var values = trackerSheet.getRange(2, 1, trackerSheet.getLastRow() - 1, 2).getValues()
+  for (var i = 0; i < values.length; i += 1) {
+    if (values[i][1] === sourceKey) return { rowIndex: i + 2, expenseId: values[i][0] || '' }
+  }
+  return null
+}
+
+function expenseMergeTrackerClaim_(claim, organization) {
+  var managerNote = claim && claim.managerNote ? claim.managerNote : ''
+  if (organization && organization.error) {
+    managerNote = managerNote ? managerNote + ' | ' + organization.error : organization.error
+  }
+  return {
+    sourceKey: claim && claim.sourceKey ? claim.sourceKey : '',
+    submittedAt: claim && claim.submittedAt ? claim.submittedAt : '',
+    memberName: claim && claim.memberName ? claim.memberName : '',
+    memberEmail: claim && claim.memberEmail ? claim.memberEmail : '',
+    purchaseDate: claim && claim.purchaseDate ? claim.purchaseDate : '',
+    vendor: claim && claim.vendor ? claim.vendor : '',
+    amount: claim && claim.amount ? claim.amount : '',
+    category: claim && claim.category ? claim.category : '',
+    description: claim && claim.description ? claim.description : '',
+    receiptUrls: organization && Array.isArray(organization.urls) ? organization.urls : claim && Array.isArray(claim.receiptUrls) ? claim.receiptUrls.slice() : [],
+    status: claim && claim.status ? claim.status : '',
+    managerNote: managerNote,
+  }
+}
+
+function expenseGetOrCreateFolderByName_(parentFolder, folderName) {
+  var existingFolders = parentFolder.getFoldersByName(folderName)
+  return existingFolders.hasNext() ? existingFolders.next() : parentFolder.createFolder(folderName)
+}
+
+function expenseBuildClaimFolderName_(expenseId, claim) {
+  return expenseId + '_' + expenseSanitizeFolderNamePart_(claim && claim.vendor ? claim.vendor : 'UnknownVendor') + '_' + expenseSanitizeFolderNamePart_(claim && claim.memberName ? claim.memberName : 'UnknownMember')
+}
+
+function expenseSanitizeFolderNamePart_(value) {
+  var sanitized = String(value || '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return sanitized || 'Unknown'
+}
+
+function expenseExtractDriveFileId_(url) {
+  var text = String(url || '')
+  var filePathMatch = text.match(/\/d\/([A-Za-z0-9_-]+)/)
+  if (filePathMatch) return filePathMatch[1]
+  var queryMatch = text.match(/[?&]id=([A-Za-z0-9_-]+)/)
+  return queryMatch ? queryMatch[1] : ''
+}
+
+function expenseFileExtension_(fileName) {
+  var match = String(fileName || '').match(/(\.[^.]+)$/)
+  return match ? match[1] : ''
+}
+
+function expenseDateFolderPart_(value, start, end, fallback) {
+  var dateText = expenseFormatLocalDate_(value)
+  return dateText ? dateText.slice(start, end) : fallback
 }

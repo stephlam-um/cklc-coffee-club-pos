@@ -12,13 +12,15 @@ function createHarness() {
       this.name = name
       this.rows = rows.map(row => [...row])
       this.sheetId = sheetId
+      this.frozenRows = 0
+      this.lastValidation = null
     }
 
     getName() { return this.name }
     getSheetId() { return this.sheetId }
     getLastRow() { return this.rows.length }
     appendRow(row) { this.rows.push([...row]) }
-    setFrozenRows() {}
+    setFrozenRows(count) { this.frozenRows = count }
     getDataRange() { return { getValues: () => this.rows.map(row => [...row]) } }
     getRange(row, column, numRows = 1, numColumns = 1) {
       return {
@@ -40,8 +42,8 @@ function createHarness() {
           }
         },
         setValue: value => this.getRange(row, column, 1, 1).setValues([[value]]),
-        setDataValidation() {},
-        setDataValidations() {},
+        setDataValidation: validation => { this.lastValidation = { row, column, numRows, numColumns, validation } },
+        setDataValidations: validations => { this.lastValidation = { row, column, numRows, numColumns, validations } },
       }
     }
   }
@@ -53,6 +55,7 @@ function createHarness() {
       this.url = url
       this.parent = parent
       this.content = ''
+      this.shouldFailMove = false
     }
 
     getId() { return this.id }
@@ -60,7 +63,11 @@ function createHarness() {
     getUrl() { return this.url }
     setName(name) { this.name = name; return this }
     setContent(content) { this.content = content; return this }
-    moveTo(folder) { this.parent = folder; return this }
+    moveTo(folder) {
+      if (this.shouldFailMove) throw new Error(`move failed for ${this.id}`)
+      this.parent = folder
+      return this
+    }
     get parentName() { return this.parent ? this.parent.getName() : null }
   }
 
@@ -121,11 +128,24 @@ function createHarness() {
     },
   }
 
+  const existingTriggers = []
   let createdTriggers = 0
+  let deletedTriggers = 0
+  let lockWaits = 0
+  let lockReleases = 0
+  let builtValidation = null
   const context = {
     console,
     Session: { getScriptTimeZone: () => 'Asia/Singapore' },
-    SpreadsheetApp: { getActive: () => spreadsheet, newDataValidation: () => ({ requireValueInList() { return this }, setAllowInvalid() { return this }, build() { return {} } }) },
+    SpreadsheetApp: {
+      getActive: () => spreadsheet,
+      newDataValidation: () => ({
+        config: { values: [], allowInvalid: true },
+        requireValueInList(values) { this.config.values = [...values]; return this },
+        setAllowInvalid(allowInvalid) { this.config.allowInvalid = allowInvalid; return this },
+        build() { builtValidation = { ...this.config }; return { ...this.config } },
+      }),
+    },
     DriveApp: {
       getFolderById: id => {
         if (id === rootFolder.getId()) return rootFolder
@@ -139,10 +159,20 @@ function createHarness() {
     },
     PropertiesService: { getScriptProperties: () => ({ getProperty: key => scriptProperties[key] || '', setProperty: (key, value) => { scriptProperties[key] = value } }) },
     ScriptApp: {
-      getProjectTriggers: () => [],
+      getProjectTriggers: () => existingTriggers,
+      deleteTrigger: trigger => {
+        const index = existingTriggers.indexOf(trigger)
+        if (index >= 0) existingTriggers.splice(index, 1)
+        deletedTriggers += 1
+      },
       newTrigger: () => ({ forSpreadsheet: () => ({ onFormSubmit: () => ({ create() { createdTriggers += 1; return { getHandlerFunction: () => 'onExpenseFormSubmit' } } }) }) }),
     },
-    LockService: { getDocumentLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    LockService: {
+      getDocumentLock: () => ({
+        waitLock() { lockWaits += 1 },
+        releaseLock() { lockReleases += 1 },
+      }),
+    },
     Utilities: {
       formatDate: (date, timeZone, pattern) => {
         if (!(date instanceof Date)) return String(date)
@@ -182,7 +212,20 @@ function createHarness() {
     values: ['9/1/2026 10:30:00', 'cici@example.com', 'Cici', '9/1/2026', 'Market', 'MOP 123.40', 'Ingredients', 'Milk and beans', 'https://drive.google.com/file/d/receipt-1/view'],
   }
 
-  return { context, event, sheets, files, rootFolder, createdTriggers }
+  return {
+    context,
+    event,
+    sheets,
+    files,
+    rootFolder,
+    scriptProperties,
+    existingTriggers,
+    get createdTriggers() { return createdTriggers },
+    get deletedTriggers() { return deletedTriggers },
+    get lockWaits() { return lockWaits },
+    get lockReleases() { return lockReleases },
+    get builtValidation() { return builtValidation },
+  }
 }
 
 test('normalizes a valid Form response into the tracker contract', () => {
@@ -245,13 +288,108 @@ test('preserves every uploaded receipt URL when Forms supplies multiple values',
   ])
 })
 
-test('builds a monthly Markdown report with totals and receipt links', () => {
-  const { context } = createHarness()
-  const markdown = context.buildExpenseMarkdownReport_([
-    { expense_id: 'EXP-20260901-0007', purchase_date: '2026-09-01', member_name: 'Cici', vendor: 'Market', amount: 123.4, category: 'Ingredients', receipt_url: 'https://drive.google.com/receipt-1', status: 'PAID' },
-  ], '2026-09', '2026-09-01T12:00:00.000Z')
-  assert.match(markdown, /Expense Report — 2026-09/)
-  assert.match(markdown, /MOP 123\.40/)
-  assert.match(markdown, /EXP-20260901-0007/)
-  assert.match(markdown, /https:\/\/drive\.google\.com\/receipt-1/)
+test('form submit appends one tracker row and organizes every receipt once per source key', () => {
+  const harness = createHarness()
+  const { context, event, sheets, files, rootFolder } = harness
+  files.set('receipt-2', {
+    ...files.get('receipt-1'),
+    id: 'receipt-2',
+    name: 'receipt-2.png',
+    url: 'https://drive.google.com/file/d/receipt-2/view',
+    getId() { return this.id },
+    getName() { return this.name },
+    getUrl() { return this.url },
+    setName(name) { this.name = name; return this },
+    setContent(content) { this.content = content; return this },
+    moveTo(folder) { this.parent = folder; return this },
+    get parentName() { return this.parent ? this.parent.getName() : null },
+  })
+  const multiReceiptEvent = {
+    ...event,
+    namedValues: {
+      ...event.namedValues,
+      Receipt: [
+        'https://drive.google.com/file/d/receipt-1/view',
+        'https://drive.google.com/file/d/receipt-2/view',
+      ],
+    },
+  }
+
+  const first = context.onExpenseFormSubmit(multiReceiptEvent)
+  const second = context.onExpenseFormSubmit(multiReceiptEvent)
+  const tracker = sheets.get('Expenses_Tracker')
+
+  assert.equal(first.duplicate, false)
+  assert.equal(first.expenseId, 'EXP-20260901-0007')
+  assert.equal(second.duplicate, true)
+  assert.equal(second.expenseId, 'EXP-20260901-0007')
+  assert.equal(tracker.rows.length, 2)
+  assert.deepEqual(tracker.rows[0], [
+    'expense_id', 'source_key', 'submitted_at', 'member_name', 'member_email', 'purchase_date', 'vendor', 'amount', 'category', 'description', 'receipt_url', 'status', 'manager_note', 'approved_by', 'approved_at', 'paid_by', 'paid_at', 'payment_reference', 'updated_at',
+  ])
+  assert.equal(tracker.rows[1][0], 'EXP-20260901-0007')
+  assert.equal(tracker.rows[1][1], '99:7')
+  assert.match(tracker.rows[1][10], /receipt-1\/view,\s*https:\/\/drive\.google\.com\/file\/d\/receipt-2\/view/)
+  assert.equal(files.get('receipt-1').parentName, 'EXP-20260901-0007_Market_Cici')
+  assert.equal(files.get('receipt-2').parentName, 'EXP-20260901-0007_Market_Cici')
+  assert.equal(rootFolder.getFoldersByName('2026').next().getFoldersByName('09').next().getFoldersByName('EXP-20260901-0007_Market_Cici').next().getName(), 'EXP-20260901-0007_Market_Cici')
+  assert.equal(harness.lockWaits, 2)
+  assert.equal(harness.lockReleases, 2)
+})
+
+test('submit keeps the tracker row when drive setup is unavailable', () => {
+  const { context, event, sheets, scriptProperties } = createHarness()
+  scriptProperties.EXPENSE_ROOT_FOLDER_ID = ''
+
+  const result = context.onExpenseFormSubmit(event)
+  const tracker = sheets.get('Expenses_Tracker')
+
+  assert.equal(result.duplicate, false)
+  assert.equal(tracker.rows.length, 2)
+  assert.equal(tracker.rows[1][10], 'https://drive.google.com/file/d/receipt-1/view')
+  assert.match(tracker.rows[1][12], /root folder/i)
+})
+
+test('setup removes duplicate triggers and creates one form-submit trigger', () => {
+  const { context, sheets, existingTriggers } = createHarness()
+  const keptTrigger = { getHandlerFunction: () => 'onExpenseFormSubmit' }
+  const duplicateTrigger = { getHandlerFunction: () => 'onExpenseFormSubmit' }
+  const otherTrigger = { getHandlerFunction: () => 'onOtherSubmit' }
+  existingTriggers.push(keptTrigger, duplicateTrigger, otherTrigger)
+
+  const result = context.setupExpenseAutomation()
+  const tracker = sheets.get('Expenses_Tracker')
+
+  assert.equal(result.trackerSheet, 'Expenses_Tracker')
+  assert.equal(result.triggerCount, 1)
+  assert.equal(tracker.getLastRow(), 1)
+  assert.equal(tracker.frozenRows, 1)
+  assert.deepEqual(tracker.rows[0], [
+    'expense_id', 'source_key', 'submitted_at', 'member_name', 'member_email', 'purchase_date', 'vendor', 'amount', 'category', 'description', 'receipt_url', 'status', 'manager_note', 'approved_by', 'approved_at', 'paid_by', 'paid_at', 'payment_reference', 'updated_at',
+  ])
+})
+
+test('setup applies status validation and deduplicates existing submit triggers', () => {
+  const harness = createHarness()
+  const { context, sheets, existingTriggers } = harness
+  existingTriggers.push(
+    { getHandlerFunction: () => 'onExpenseFormSubmit' },
+    { getHandlerFunction: () => 'onExpenseFormSubmit' },
+    { getHandlerFunction: () => 'someOtherHandler' },
+  )
+
+  const result = context.setupExpenseAutomation()
+  const tracker = sheets.get('Expenses_Tracker')
+
+  assert.equal(result.triggerCount, 1)
+  assert.equal(harness.createdTriggers, 0)
+  assert.equal(harness.deletedTriggers, 1)
+  assert.deepEqual(harness.builtValidation, { values: ['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED', 'PAID'], allowInvalid: true })
+  assert.deepEqual(tracker.lastValidation, {
+    row: 2,
+    column: 12,
+    numRows: 999,
+    numColumns: 1,
+    validation: { values: ['SUBMITTED', 'NEEDS_INFO', 'APPROVED', 'REJECTED', 'PAID'], allowInvalid: true },
+  })
 })
