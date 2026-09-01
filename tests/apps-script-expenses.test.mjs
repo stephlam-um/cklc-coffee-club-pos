@@ -124,6 +124,7 @@ function createHarness() {
   let createdTriggers = 0
   const context = {
     console,
+    Session: { getScriptTimeZone: () => 'Asia/Singapore' },
     SpreadsheetApp: { getActive: () => spreadsheet, newDataValidation: () => ({ requireValueInList() { return this }, setAllowInvalid() { return this }, build() { return {} } }) },
     DriveApp: {
       getFolderById: id => {
@@ -143,7 +144,22 @@ function createHarness() {
     },
     LockService: { getDocumentLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: {
-      formatDate: date => date instanceof Date ? date.toISOString().slice(0, 10) : String(date),
+      formatDate: (date, timeZone, pattern) => {
+        if (!(date instanceof Date)) return String(date)
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: timeZone || 'UTC',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })
+        const parts = Object.fromEntries(formatter.formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
+        if (pattern === "yyyy-MM-dd'T'HH:mm:ss") return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`
+        return `${parts.year}-${parts.month}-${parts.day}`
+      },
       getUuid: () => 'uuid-1',
     },
   }
@@ -189,21 +205,22 @@ test('marks an incomplete response as NEEDS_INFO instead of dropping it', () => 
   assert.match(claim.managerNote, /amount|receipt/i)
 })
 
-test('preserves the local purchase date and expense ID date key for date-only values', () => {
+test('preserves the local purchase date and expense ID date key for near-midnight local timestamps', () => {
   const { context, event } = createHarness()
   const localDateEvent = {
     ...event,
     namedValues: {
       ...event.namedValues,
-      Timestamp: ['9/1/2026 00:30:00'],
+      Timestamp: ['2026-08-31T16:30:00.000Z'],
       'Purchase date': ['9/1/2026'],
     },
   }
 
   const claim = context.expenseNormalizeResponse_(localDateEvent)
-  const expenseId = context.buildExpenseId_(claim.purchaseDate, localDateEvent.range.getRow())
+  const expenseId = context.buildExpenseId_(claim.submittedAt, localDateEvent.range.getRow())
 
   assert.equal(claim.purchaseDate, '2026-09-01')
+  assert.equal(claim.submittedAt, '2026-09-01T00:30:00')
   assert.equal(expenseId, 'EXP-20260901-0007')
 })
 
