@@ -11,21 +11,25 @@ function setupExpenseAutomation() {
     ? ScriptApp.getProjectTriggers()
     : []
   var keptTrigger = null
+  var triggersToDelete = []
 
   for (var i = 0; i < triggers.length; i += 1) {
     var trigger = triggers[i]
-    if (!expenseIsExpenseSubmitTrigger_(trigger)) continue
-    if (!keptTrigger) {
-      keptTrigger = trigger
+    if (expenseIsExpenseSubmitTrigger_(trigger)) {
+      if (!keptTrigger) {
+        keptTrigger = trigger
+        continue
+      }
+      triggersToDelete.push(trigger)
       continue
     }
-    if (typeof ScriptApp.deleteTrigger === 'function') ScriptApp.deleteTrigger(trigger)
+    if (expenseHasSubmitHandlerName_(trigger)) {
+      triggersToDelete.push(trigger)
+    }
   }
 
-  for (var j = 0; j < triggers.length; j += 1) {
-    var candidateTrigger = triggers[j]
-    if (!expenseHasSubmitHandlerName_(candidateTrigger) || expenseIsExpenseSubmitTrigger_(candidateTrigger)) continue
-    if (typeof ScriptApp.deleteTrigger === 'function') ScriptApp.deleteTrigger(candidateTrigger)
+  for (var j = 0; j < triggersToDelete.length; j += 1) {
+    if (typeof ScriptApp.deleteTrigger === 'function') ScriptApp.deleteTrigger(triggersToDelete[j])
   }
 
   if (!keptTrigger && typeof ScriptApp !== 'undefined' && ScriptApp && typeof ScriptApp.newTrigger === 'function') {

@@ -440,3 +440,23 @@ test('setup replaces an incompatible same-name trigger with one spreadsheet form
   assert.equal(matchingTriggers[0].getTriggerSource(), 'SPREADSHEETS')
   assert.equal(matchingTriggers[0].getEventType(), 'ON_FORM_SUBMIT')
 })
+
+test('setup removes adjacent incompatible same-name triggers and leaves one valid spreadsheet form-submit trigger', () => {
+  const harness = createHarness()
+  const { context, existingTriggers, makeTrigger } = harness
+  existingTriggers.push(
+    makeTrigger('onExpenseFormSubmit', 'CLOCK', 'CLOCK'),
+    makeTrigger('onExpenseFormSubmit', 'CLOCK', 'CLOCK'),
+    makeTrigger('onOtherSubmit', 'SPREADSHEETS', 'ON_FORM_SUBMIT'),
+  )
+
+  const result = context.setupExpenseAutomation()
+  const matchingTriggers = existingTriggers.filter(trigger => trigger.getHandlerFunction() === 'onExpenseFormSubmit')
+
+  assert.equal(result.triggerCount, 1)
+  assert.equal(harness.deletedTriggers, 2)
+  assert.equal(harness.createdTriggers, 1)
+  assert.equal(matchingTriggers.length, 1)
+  assert.equal(matchingTriggers[0].getTriggerSource(), 'SPREADSHEETS')
+  assert.equal(matchingTriggers[0].getEventType(), 'ON_FORM_SUBMIT')
+})
