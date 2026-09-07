@@ -473,6 +473,9 @@ test('monthly report writer creates then updates one filtered Markdown report wi
   tracker.appendRow([
     'EXP-20260831-0001', '99:3', '', 'Cal', 'cal@example.com', '2026-08-31', 'Old vendor', 50, 'Other', 'Excluded', '', 'APPROVED', '', '', '', '', '', '', '',
   ])
+  tracker.appendRow([
+    'EXP-20260904-0004', '99:5', '', 'Emi', 'emi@example.com', new Date('2026-09-04T00:00:00.000Z'), 'No amount', '', 'Other', 'Date fixture', '', 'NEEDS_INFO', '', '', '', '', '', '', '',
+  ])
 
   const first = context.generateExpenseMarkdownReport('2026-09')
   const report = rootFolder.getFilesByName('Expense_Report_2026-09.md').next()
@@ -484,10 +487,10 @@ test('monthly report writer creates then updates one filtered Markdown report wi
 
   assert.equal(first.fileName, 'Expense_Report_2026-09.md')
   assert.equal(first.yearMonth, '2026-09')
-  assert.equal(first.rowCount, 2)
+  assert.equal(first.rowCount, 3)
   assert.equal(second.fileName, 'Expense_Report_2026-09.md')
   assert.equal(second.yearMonth, '2026-09')
-  assert.equal(second.rowCount, 3)
+  assert.equal(second.rowCount, 4)
   assert.equal(rootFolder.files.size, 1)
   assert.notEqual(report.content, firstContent)
   assert.match(report.content, /EXP-20260903-0003/)
@@ -497,6 +500,7 @@ test('monthly report writer creates then updates one filtered Markdown report wi
   assert.match(report.content, /\| Ingredients \| MOP 123\.40 \|/)
   assert.match(report.content, /Tea \\| Co/)
   assert.match(report.content, /Cups \\| lids/)
+  assert.match(report.content, /EXP-20260904-0004 \| 2026-09-04 \| Emi \| No amount \| Date fixture \| - \| NEEDS_INFO/)
   assert.match(report.content, /EXP-20260901-0001[\s\S]*EXP-20260902-0002/)
   assert.doesNotMatch(report.content, /EXP-20260831-0001/)
 })
