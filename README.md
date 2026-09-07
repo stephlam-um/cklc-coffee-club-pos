@@ -91,9 +91,73 @@ After close, the shift is durable in Supabase even if Sheets is unavailable. The
 
 If a payment request times out, retry the same payment action. The original transaction ID is reused and the database returns the original result instead of creating another sale.
 
-## Future expenses
+## 6. Google Forms expense claims
 
-Expense entry is intentionally not in the POS UI. A later addition can import expenses entered in Google Sheets into a dedicated `expenses` table using a unique source-row ID, without changing the checkout interface.
+Expense entry is intentionally not in the POS UI. Use a Google Form connected to the existing reporting spreadsheet for expense claims.
+
+### Create the expense Form
+
+1. Create a Google Form named `Student Coffee Expense Claim`.
+2. In **Settings → Responses**, turn on **Collect email addresses** and require sign-in to the organization account. Do not allow anonymous responses.
+3. Add these questions with the exact titles and types:
+
+   - `Member name` — Short answer, required.
+   - `Purchase date` — Date, required.
+   - `Vendor` — Short answer, required.
+   - `Amount` — Short answer, required. Enter a positive amount in MOP.
+   - `Category` — Dropdown, required; options exactly `Ingredients`, `Supplies`, and `Other`.
+   - `Description` — Paragraph, optional.
+   - `Receipt` — File upload, required; allow image and PDF files only, with up to 5 files per response and a maximum of 10 MB per file.
+
+   The email collected by Forms is submitted as `Email Address`; do not add a separate email question. The raw response sheet must remain the Form's linked response destination. Do not rename, reorder, delete, or manually edit its response columns: the automation uses that sheet's form-submit event and source row as its idempotency key.
+
+### Configure Drive and Apps Script
+
+1. Create a restricted Google Drive folder named `Expenses`. Share it only with the managers and the account that owns the Apps Script project. Copy the folder ID from its URL.
+2. Open the existing reporting spreadsheet's **Extensions → Apps Script** project and add the complete contents of `apps-script/expenses.gs` as a new script file. Keep the existing `Code.gs` and other reporting code unchanged.
+3. In **Project Settings → Script properties**, add:
+
+   ```text
+   EXPENSE_ROOT_FOLDER_ID=<the ID of the restricted Expenses folder>
+   ```
+
+4. Save the project and run `setupExpenseAutomation()` once from the Apps Script editor. Approve the requested Google Sheets, Drive, and Forms permissions.
+5. Verify that the linked spreadsheet contains an `Expenses_Tracker` sheet with its header row and that Apps Script has exactly one spreadsheet **On form submit** installable trigger for `onExpenseFormSubmit`.
+
+When a claim is submitted, the script moves uploaded receipts into `Expenses/<year>/<month>/<expense_id>_<vendor>_<member>`, renames them with the expense ID, and writes the claim to `Expenses_Tracker`. If the root folder is not configured or a receipt cannot be organized, the claim remains recorded and the issue is placed in `manager_note`.
+
+### Test one claim
+
+Submit one real or disposable test response with a valid member name, organization email, purchase date, vendor, positive MOP amount, one of the three categories, and one image or PDF receipt. Confirm that:
+
+- the raw Form response appears in the linked response sheet;
+- one row appears in `Expenses_Tracker` with an `EXP-YYYYMMDD-####` ID and status `SUBMITTED`;
+- the receipt is in the restricted `Expenses` folder under the expected year, month, and claim folder; and
+- the tracker has not received a duplicate row after refreshing or retrying the test.
+
+Incomplete or invalid claims are still recorded with status `NEEDS_INFO`; they are not silently discarded.
+
+### Daily expense operations
+
+The manager reviews the receipt and claim in `Expenses_Tracker` and updates the `status` column using the allowed workflow:
+
+1. New complete claims start at `SUBMITTED`.
+2. Change `SUBMITTED` to `NEEDS_INFO` when information or a usable receipt is missing, and put the request or explanation in `manager_note`.
+3. Change a verified claim to `APPROVED`, recording `approved_by` and `approved_at`.
+4. Change an invalid or non-reimbursable claim to `REJECTED`, recording the reason in `manager_note`.
+5. After an approved claim is paid, record `paid_by`, `paid_at`, and `payment_reference`, then change its status to `PAID`.
+
+Do not delete tracker rows or alter the raw response sheet. Google Sheets remains the source of truth for claim status, approval, payment, and audit history.
+
+### Generate a monthly report
+
+From the Apps Script editor, run the function below with the required month in `YYYY-MM` format:
+
+```javascript
+generateExpenseMarkdownReport('YYYY-MM')
+```
+
+The script creates or replaces `Expense_Report_YYYY-MM.md` in the restricted `Expenses` folder and returns the number of matching rows. The report is a snapshot for review and sharing; update the tracker in Sheets when correcting a claim, because Sheets remains the source of truth.
 
 ## Today’s Orders dashboard
 
