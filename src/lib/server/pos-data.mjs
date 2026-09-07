@@ -63,6 +63,33 @@ export async function updateOrderStatus(supabase, transactionId, fulfillmentStat
   return { transactionId: result.data.id, fulfillmentStatus: result.data.fulfillment_status }
 }
 
+export function assertManager(actor) {
+  if (String(actor?.role || '').toUpperCase() !== 'MANAGER') throw Object.assign(new Error('Manager access required'), { code: 'FORBIDDEN' })
+}
+
+function toDashboardOrder(row) {
+  return normalizeDashboardOrder({
+    transactionId: row.id, timestamp: row.created_at, shiftId: row.shift_id, staffId: row.staff_id,
+    staffName: row.staff?.name || row.staff_id, type: row.type,
+    items: (row.transaction_items || []).map(item => ({ productId: item.product_id, name: item.product_name, temperature: item.temperature, quantity: item.quantity, unitPrice: Number(item.unit_price), lineTotal: Number(item.line_total) })),
+    total: Number(row.total), paymentMethod: row.payment_method, wasteReason: row.waste_reason,
+    fulfillmentStatus: row.fulfillment_status, completedAt: row.completed_at, completedBy: row.completed_by,
+  })
+}
+
+export async function getAllPendingOrders(supabase) {
+  const { data, error } = await supabase.from('transactions').select('id,created_at,shift_id,staff_id,type,total,payment_method,waste_reason,fulfillment_status,completed_at,completed_by,staff:staff_id(name),transaction_items(*)').eq('status', 'COMPLETED').eq('fulfillment_status', 'PENDING').neq('type', 'WASTE').order('created_at', { ascending: false })
+  if (error) throw error
+  return { orders: (data || []).map(toDashboardOrder), syncedAt: new Date().toISOString() }
+}
+
+export async function deletePendingOrder(supabase, transactionId) {
+  const result = await supabase.from('transactions').delete().eq('id', transactionId).eq('fulfillment_status', 'PENDING').select('id').maybeSingle()
+  if (result.error) throw result.error
+  if (!result.data) throw Object.assign(new Error('Pending transaction not found'), { code: 'NOT_FOUND' })
+  return { transactionId: result.data.id }
+}
+
 export async function closeShift(supabase, { shiftId, staffId, mpayActual, wechatActual, note }) {
   const result = await supabase.rpc('close_shift', { p_shift_id: shiftId, p_staff_id: staffId, p_mpay_actual: mpayActual, p_wechat_actual: wechatActual, p_note: note || '' })
   if (result.error) throw result.error

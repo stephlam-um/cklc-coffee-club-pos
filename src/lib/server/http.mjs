@@ -9,6 +9,7 @@ export function errorResponse(error, code = 'BAD_REQUEST', status = 400) {
 export function routeError(error) {
   const code = String(error?.code || '')
   if (code === 'UNAUTHORIZED' || error?.message === 'Unauthorized') return errorResponse('Unauthorized', 'UNAUTHORIZED', 401)
+  if (code === 'FORBIDDEN') return errorResponse(error.message, code, 403)
   if (code === 'CONFLICTING_TRANSACTION' || error?.message === 'CONFLICTING_TRANSACTION') return errorResponse('Transaction ID already belongs to a different order', 'CONFLICTING_TRANSACTION', 409)
   if (code === 'NOT_FOUND') return errorResponse(error.message, code, 404)
   return errorResponse(error?.message || 'Request failed', code || 'BAD_REQUEST', 400)

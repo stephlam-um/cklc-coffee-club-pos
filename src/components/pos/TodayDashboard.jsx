@@ -19,13 +19,14 @@ function StatCard({ label, value, detail, tone = '' }) {
   return <div className={`dashboard-stat ${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>
 }
 
-export default function TodayDashboard({ data, loading, error, staff, onRefresh, onUpdateStatus }) {
+export default function TodayDashboard({ data, pendingData, loading, error, staff, onRefresh, onUpdateStatus, onDeletePendingOrder }) {
   const [updatingId, setUpdatingId] = useState('')
   const [statusError, setStatusError] = useState('')
   const orders = sortDashboardOrders((data?.orders || []).filter(order => order.type !== 'WASTE').map(normalizeDashboardOrder))
   const stats = data?.stats || dashboardStats(data?.orders || [])
   const pendingOrders = orders.filter(order => order.fulfillmentStatus === 'PENDING')
   const completedOrders = orders.filter(order => order.fulfillmentStatus === 'COMPLETED')
+  const allPendingOrders = sortDashboardOrders((pendingData?.orders || []).map(normalizeDashboardOrder)).filter(order => order.fulfillmentStatus === 'PENDING')
 
   async function changeStatus(order) {
     const nextStatus = order.fulfillmentStatus === 'COMPLETED' ? 'PENDING' : 'COMPLETED'
@@ -35,6 +36,18 @@ export default function TodayDashboard({ data, loading, error, staff, onRefresh,
       await onUpdateStatus(order.transactionId, nextStatus)
     } catch (caught) {
       setStatusError(caught.message || 'Could not update this order. Try again.')
+    } finally {
+      setUpdatingId('')
+    }
+  }
+
+  async function requestDeletion(order) {
+    setUpdatingId(order.transactionId)
+    setStatusError('')
+    try {
+      await onDeletePendingOrder(order)
+    } catch (caught) {
+      setStatusError(caught.message || 'Could not delete this order. Refresh and try again.')
     } finally {
       setUpdatingId('')
     }
@@ -59,6 +72,14 @@ export default function TodayDashboard({ data, loading, error, staff, onRefresh,
         </button>
       </article>
     )
+  }
+
+  function renderDeletionReview(order) {
+    return <article className="dashboard-order is-pending" key={`review-${order.transactionId}`}>
+      <div className="dashboard-order-topline"><div><span className="order-status"><span aria-hidden="true" />Pending</span><span className="order-time">{formatOrderTime(order.timestamp)}</span></div><strong className="order-total">{formatMop(order.total)}</strong></div>
+      <div className="dashboard-order-body"><div className="dashboard-order-items">{order.items.map((item, index) => <div key={`${order.transactionId}-${index}`}><span>{item.quantity} × {item.name}</span><small>{formatMop(item.lineTotal)}</small></div>)}</div><div className="dashboard-order-meta"><span>{PAYMENT_LABELS[order.paymentMethod] || 'No payment'}</span><span>By {order.staffName}</span><span>#{order.transactionId.slice(-6)}</span></div></div>
+      <button className="order-status-button danger" type="button" disabled={updatingId === order.transactionId} onClick={() => requestDeletion(order)}>{updatingId === order.transactionId ? 'Deleting…' : 'Delete permanently'}</button>
+    </article>
   }
 
   return (
@@ -88,6 +109,8 @@ export default function TodayDashboard({ data, loading, error, staff, onRefresh,
           <section aria-labelledby="completed-orders-title"><div className="queue-heading"><div><p className="eyebrow">Already Handed Over</p><h2 id="completed-orders-title">Completed <span>{completedOrders.length}</span></h2></div><span className="queue-marker completed-marker" aria-hidden="true" /></div>{completedOrders.length ? <div className="dashboard-order-list">{completedOrders.map(renderOrder)}</div> : <div className="dashboard-empty compact-empty"><strong>No completed orders yet.</strong><span>Mark an order when it leaves the counter.</span></div>}</section>
         </div>
       )}
+
+      {staff.role === 'MANAGER' && <section className="order-queues deletion-review" aria-labelledby="all-pending-orders-title"><div className="queue-heading"><div><p className="eyebrow">Manager Review</p><h2 id="all-pending-orders-title">All Pending Orders <span>{allPendingOrders.length}</span></h2></div><span className="queue-marker pending-marker" aria-hidden="true" /></div><p>Includes previous days. Deleting an order permanently erases its transaction and items.</p>{allPendingOrders.length ? <div className="dashboard-order-list">{allPendingOrders.map(renderDeletionReview)}</div> : <div className="dashboard-empty compact-empty"><strong>No pending orders to review.</strong><span>All paid orders have been completed or deleted.</span></div>}</section>}
 
       <p className="dashboard-footnote">Waste logged today: {stats.wasteCount} {stats.wasteCount === 1 ? 'entry' : 'entries'} · {formatMop(stats.wasteTotal)} · {Object.values(WASTE_LABELS).join(' / ')}</p>
     </main>
