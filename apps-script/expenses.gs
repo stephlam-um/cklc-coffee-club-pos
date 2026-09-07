@@ -68,6 +68,151 @@ function onExpenseFormSubmit(event) {
   }
 }
 
+function generateExpenseMarkdownReport(yearMonth) {
+  expenseValidateYearMonth_(yearMonth)
+
+  var spreadsheet = SpreadsheetApp.getActive()
+  var trackerSheet = spreadsheet.getSheetByName(EXPENSE_TRACKER_SHEET_NAME)
+  if (!trackerSheet) throw new Error('Expense tracker sheet is missing.')
+
+  var values = trackerSheet.getDataRange().getValues()
+  var headers = values.length ? values[0] : []
+  var headerIndexes = expenseBuildHeaderIndexes_(headers)
+  var rows = []
+  for (var i = 1; i < values.length; i += 1) rows.push(expenseBuildReportRow_(values[i], headerIndexes))
+
+  var fileName = 'Expense_Report_' + yearMonth + '.md'
+  var markdown = buildExpenseMarkdownReport_(rows, yearMonth, expenseNowIso_())
+  var properties = PropertiesService.getScriptProperties()
+  var rootFolderId = properties.getProperty(EXPENSE_ROOT_FOLDER_PROPERTY)
+  if (!rootFolderId) throw new Error('Missing expense root folder configuration.')
+
+  var rootFolder = DriveApp.getFolderById(rootFolderId)
+  var matchingFiles = rootFolder.getFilesByName(fileName)
+  if (matchingFiles.hasNext()) matchingFiles.next().setContent(markdown)
+  else rootFolder.createFile(fileName, markdown)
+
+  return { fileName: fileName, yearMonth: yearMonth, rowCount: expenseFilterReportRows_(rows, yearMonth).length }
+}
+
+function buildExpenseMarkdownReport_(rows, yearMonth, generatedAt) {
+  expenseValidateYearMonth_(yearMonth)
+  var matchingRows = expenseFilterReportRows_(rows, yearMonth)
+  matchingRows.sort(function (left, right) {
+    var leftDate = expenseReportValue_(left, 'purchase_date')
+    var rightDate = expenseReportValue_(right, 'purchase_date')
+    if (leftDate !== rightDate) return leftDate < rightDate ? -1 : 1
+    var leftId = expenseReportValue_(left, 'expense_id')
+    var rightId = expenseReportValue_(right, 'expense_id')
+    return leftId === rightId ? 0 : leftId < rightId ? -1 : 1
+  })
+
+  var totalsByStatus = expenseReportTotals_(matchingRows, 'status')
+  var totalsByCategory = expenseReportTotals_(matchingRows, 'category')
+  var lines = [
+    '# Expense Report: ' + yearMonth,
+    '',
+    'Generated: ' + expenseReportDisplayValue_(generatedAt),
+    '',
+    '## Totals by Status',
+    '',
+    '| Status | Total |',
+    '| --- | ---: |',
+  ]
+
+  expenseAppendReportTotals_(lines, totalsByStatus)
+  lines.push('', '## Totals by Category', '', '| Category | Total |', '| --- | ---: |')
+  expenseAppendReportTotals_(lines, totalsByCategory)
+  lines.push('', '## Expenses', '', '| Expense ID | Date | Member | Vendor | Description | Amount | Status | Receipt |', '| --- | --- | --- | --- | --- | ---: | --- | --- |')
+
+  if (!matchingRows.length) lines.push('| - | - | - | - | - | - | - | - |')
+  for (var i = 0; i < matchingRows.length; i += 1) {
+    var row = matchingRows[i]
+    var receiptUrl = expenseReportValue_(row, 'receipt_url')
+    lines.push('| ' + [
+      expenseReportTableValue_(expenseReportValue_(row, 'expense_id')),
+      expenseReportTableValue_(expenseReportValue_(row, 'purchase_date')),
+      expenseReportTableValue_(expenseReportValue_(row, 'member_name')),
+      expenseReportTableValue_(expenseReportValue_(row, 'vendor')),
+      expenseReportTableValue_(expenseReportValue_(row, 'description')),
+      expenseFormatReportAmount_(expenseReportValue_(row, 'amount')),
+      expenseReportTableValue_(expenseReportValue_(row, 'status')),
+      receiptUrl ? '[Receipt](' + expenseEscapeMarkdown_(receiptUrl) + ')' : '-',
+    ].join(' | ') + ' |')
+  }
+
+  return lines.join('\n') + '\n'
+}
+
+function expenseBuildHeaderIndexes_(headers) {
+  var indexes = {}
+  for (var i = 0; i < headers.length; i += 1) indexes[String(headers[i] || '')] = i
+  return indexes
+}
+
+function expenseBuildReportRow_(values, headerIndexes) {
+  var row = {}
+  for (var i = 0; i < EXPENSE_HEADERS.length; i += 1) {
+    var header = EXPENSE_HEADERS[i]
+    row[header] = headerIndexes[header] === undefined ? '' : values[headerIndexes[header]]
+  }
+  return row
+}
+
+function expenseFilterReportRows_(rows, yearMonth) {
+  var matchingRows = []
+  var sourceRows = Array.isArray(rows) ? rows : []
+  for (var i = 0; i < sourceRows.length; i += 1) {
+    if (expenseFormatLocalDate_(expenseReportValue_(sourceRows[i], 'purchase_date')).slice(0, 7) === yearMonth) matchingRows.push(sourceRows[i])
+  }
+  return matchingRows
+}
+
+function expenseReportTotals_(rows, key) {
+  var totals = {}
+  for (var i = 0; i < rows.length; i += 1) {
+    var group = expenseReportValue_(rows[i], key) || '-'
+    var amount = Number(expenseReportValue_(rows[i], 'amount'))
+    totals[group] = (totals[group] || 0) + (isFinite(amount) ? amount : 0)
+  }
+  return totals
+}
+
+function expenseAppendReportTotals_(lines, totals) {
+  var keys = Object.keys(totals).sort()
+  if (!keys.length) lines.push('| - | MOP 0.00 |')
+  for (var i = 0; i < keys.length; i += 1) lines.push('| ' + expenseReportTableValue_(keys[i]) + ' | ' + expenseFormatReportAmount_(totals[keys[i]]) + ' |')
+}
+
+function expenseReportValue_(row, key) {
+  if (Array.isArray(row)) {
+    var index = EXPENSE_HEADERS.indexOf(key)
+    return index >= 0 ? row[index] : ''
+  }
+  return row && row[key] !== undefined && row[key] !== null ? row[key] : ''
+}
+
+function expenseReportDisplayValue_(value) {
+  return value === undefined || value === null || value === '' ? '-' : String(value)
+}
+
+function expenseReportTableValue_(value) {
+  return expenseEscapeMarkdown_(expenseReportDisplayValue_(value))
+}
+
+function expenseEscapeMarkdown_(value) {
+  return String(value || '').replace(/\\\\/g, '\\\\\\\\').replace(/\|/g, '\\|')
+}
+
+function expenseFormatReportAmount_(value) {
+  var amount = Number(value)
+  return isFinite(amount) ? 'MOP ' + amount.toFixed(2) : '-'
+}
+
+function expenseValidateYearMonth_(yearMonth) {
+  if (!/^\d{4}-\d{2}$/.test(yearMonth || '')) throw new Error('yearMonth must use YYYY-MM format.')
+}
+
 function expenseNormalizeResponse_(event) {
   const namedValues = event && event.namedValues ? event.namedValues : {}
   const row = expenseGetSourceRow_(event)

@@ -460,3 +460,49 @@ test('setup removes adjacent incompatible same-name triggers and leaves one vali
   assert.equal(matchingTriggers[0].getTriggerSource(), 'SPREADSHEETS')
   assert.equal(matchingTriggers[0].getEventType(), 'ON_FORM_SUBMIT')
 })
+
+test('monthly report writer creates then updates one filtered Markdown report with escaped totals', () => {
+  const { context, sheets, rootFolder } = createHarness()
+  const tracker = sheets.get('Expenses_Tracker') || context.ensureExpenseTrackerSheet_()
+  tracker.appendRow([
+    'EXP-20260902-0002', '99:2', '', 'Bia', 'bia@example.com', '2026-09-02', 'Tea | Co', 20, 'Supplies', 'Cups | lids', 'https://example.com/receipt-2', 'PAID', '', '', '', '', '', '', '',
+  ])
+  tracker.appendRow([
+    'EXP-20260901-0001', '99:1', '', 'Ana', 'ana@example.com', '2026-09-01', 'Market', 123.4, 'Ingredients', 'Milk', 'https://example.com/receipt-1', 'SUBMITTED', '', '', '', '', '', '', '',
+  ])
+  tracker.appendRow([
+    'EXP-20260831-0001', '99:3', '', 'Cal', 'cal@example.com', '2026-08-31', 'Old vendor', 50, 'Other', 'Excluded', '', 'APPROVED', '', '', '', '', '', '', '',
+  ])
+
+  const first = context.generateExpenseMarkdownReport('2026-09')
+  const report = rootFolder.getFilesByName('Expense_Report_2026-09.md').next()
+  const firstContent = report.content
+  tracker.appendRow([
+    'EXP-20260903-0003', '99:4', '', 'Dia', 'dia@example.com', '2026-09-03', 'Bakery', 10, 'Other', 'Bread', '', 'APPROVED', '', '', '', '', '', '', '',
+  ])
+  const second = context.generateExpenseMarkdownReport('2026-09')
+
+  assert.equal(first.fileName, 'Expense_Report_2026-09.md')
+  assert.equal(first.yearMonth, '2026-09')
+  assert.equal(first.rowCount, 2)
+  assert.equal(second.fileName, 'Expense_Report_2026-09.md')
+  assert.equal(second.yearMonth, '2026-09')
+  assert.equal(second.rowCount, 3)
+  assert.equal(rootFolder.files.size, 1)
+  assert.notEqual(report.content, firstContent)
+  assert.match(report.content, /EXP-20260903-0003/)
+  assert.match(report.content, /\| PAID \| MOP 20\.00 \|/)
+  assert.match(report.content, /\| SUBMITTED \| MOP 123\.40 \|/)
+  assert.match(report.content, /\| Supplies \| MOP 20\.00 \|/)
+  assert.match(report.content, /\| Ingredients \| MOP 123\.40 \|/)
+  assert.match(report.content, /Tea \\| Co/)
+  assert.match(report.content, /Cups \\| lids/)
+  assert.match(report.content, /EXP-20260901-0001[\s\S]*EXP-20260902-0002/)
+  assert.doesNotMatch(report.content, /EXP-20260831-0001/)
+})
+
+test('monthly report builder rejects malformed periods', () => {
+  const { context } = createHarness()
+
+  assert.throws(() => context.generateExpenseMarkdownReport('2026-9'), /yearMonth/i)
+})
