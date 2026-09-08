@@ -7,12 +7,14 @@ const routes = {
   createTransaction: ['POST', '/api/transactions'],
   closeShift: ['POST', null],
   getTodayOrders: ['GET', '/api/orders/today'],
+  getPendingOrders: ['GET', '/api/orders/pending'],
   updateOrderStatus: ['PATCH', null],
+  deletePendingOrder: ['DELETE', null],
 }
 
 async function request(action, data = {}) {
   const [method, configuredPath] = routes[action] || []
-  const path = configuredPath || (action === 'closeShift' ? `/api/shifts/${encodeURIComponent(data.shiftId)}/close` : `/api/orders/${encodeURIComponent(data.transactionId)}/status`)
+  const path = configuredPath || (action === 'closeShift' ? `/api/shifts/${encodeURIComponent(data.shiftId)}/close` : action === 'deletePendingOrder' ? `/api/orders/${encodeURIComponent(data.transactionId)}` : `/api/orders/${encodeURIComponent(data.transactionId)}/status`)
   const response = await fetch(path, {
     method,
     headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
@@ -36,5 +38,7 @@ export const posApi = {
   createTransaction: (transaction) => request('createTransaction', { transaction }),
   closeShift: (payload) => request('closeShift', payload),
   getTodayOrders: () => request('getTodayOrders'),
+  getPendingOrders: () => request('getPendingOrders'),
   updateOrderStatus: (transactionId, fulfillmentStatus, staffId) => request('updateOrderStatus', buildOrderStatusPayload(transactionId, fulfillmentStatus, staffId)),
+  deletePendingOrder: (transactionId) => request('deletePendingOrder', { transactionId }),
 }

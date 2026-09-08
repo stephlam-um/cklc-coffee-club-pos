@@ -54,6 +54,7 @@ export default function PosPage() {
   const [dashboardData, setDashboardData] = useState(null)
   const [dashboardLoading, setDashboardLoading] = useState(false)
   const [dashboardError, setDashboardError] = useState('')
+  const [pendingOrdersData, setPendingOrdersData] = useState(null)
   const [online, setOnline] = useState(true)
   const checkoutInFlight = useRef(false)
 
@@ -90,9 +91,13 @@ export default function PosPage() {
     setDashboardLoading(true)
     setDashboardError('')
     try {
-      const result = await posApi.getTodayOrders()
+      const [result, pendingResult] = await Promise.all([
+        posApi.getTodayOrders(),
+        staff?.role === 'MANAGER' ? posApi.getPendingOrders() : Promise.resolve(null),
+      ])
       const orders = (result.orders || []).map(normalizeDashboardOrder)
       setDashboardData({ ...result, orders, stats: result.stats || dashboardStats(orders) })
+      if (pendingResult) setPendingOrdersData({ ...pendingResult, orders: (pendingResult.orders || []).map(normalizeDashboardOrder) })
       return true
     } catch (caught) {
       setDashboardError(`${caught.message}. Check the POS server and try again.`)
@@ -114,6 +119,21 @@ export default function PosPage() {
       ...previous,
       orders: previous.orders.map(order => order.transactionId === transactionId ? { ...order, fulfillmentStatus: result.fulfillmentStatus } : order),
       stats: dashboardStats(previous.orders.map(order => order.transactionId === transactionId ? { ...order, fulfillmentStatus: result.fulfillmentStatus } : order)),
+    } : previous)
+    if (staff.role === 'MANAGER') {
+      const pendingResult = await posApi.getPendingOrders()
+      setPendingOrdersData({ ...pendingResult, orders: (pendingResult.orders || []).map(normalizeDashboardOrder) })
+    }
+  }
+
+  async function deletePendingOrder(order) {
+    if (!window.confirm(`Permanently delete order #${order.transactionId.slice(-6)}? This erases the transaction and its items and cannot be undone.`)) return
+    await posApi.deletePendingOrder(order.transactionId)
+    setPendingOrdersData(previous => previous ? { ...previous, orders: previous.orders.filter(item => item.transactionId !== order.transactionId) } : previous)
+    setDashboardData(previous => previous ? {
+      ...previous,
+      orders: previous.orders.filter(item => item.transactionId !== order.transactionId),
+      stats: dashboardStats(previous.orders.filter(item => item.transactionId !== order.transactionId)),
     } : previous)
   }
 
@@ -235,6 +255,7 @@ export default function PosPage() {
       setShowClose(false)
       setActual({ mpay: '', wechat: '', note: '' })
       setDashboardData(null)
+      setPendingOrdersData(null)
       setActiveView('POS')
       setNotice('Shift Closed.')
     } catch (caught) {
@@ -287,7 +308,7 @@ export default function PosPage() {
         </div>
 
         {activeView === 'DASHBOARD' ? (
-          <TodayDashboard data={dashboardData} loading={dashboardLoading} error={dashboardError} staff={staff} onRefresh={loadDashboard} onUpdateStatus={updateOrderStatus} />
+          <TodayDashboard data={dashboardData} pendingData={pendingOrdersData} loading={dashboardLoading} error={dashboardError} staff={staff} onRefresh={loadDashboard} onUpdateStatus={updateOrderStatus} onDeletePendingOrder={deletePendingOrder} />
         ) : <main className="workspace" id="main-content">
           <div className="catalog-column">
             <ProductCatalog products={products} mode={mode} onAdd={(product, temperature) => setCart(current => addProduct(current, product, temperature))} />
