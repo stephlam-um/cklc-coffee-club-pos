@@ -94,7 +94,10 @@ h2 { margin-bottom: 0; font-size: clamp(1.35rem, 2vw, 2rem); letter-spacing: -0.
 .staff-chip { gap: 10px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); font-weight: 800; }
 .staff-chip small { display: block; margin-bottom: 1px; color: var(--ink-soft); font-family: var(--utility); font-size: 0.6rem; letter-spacing: 0.07em; text-transform: uppercase; }
 
-.mode-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 760px; margin: 18px auto 0; padding: 6px; border: 1px solid var(--line); border-radius: 18px; background: white; box-shadow: 0 8px 28px rgba(16, 42, 67, 0.06); }
+.mode-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 760px; margin: 18px auto 0; padding: 6px; border: 1px solid var(--line); border-radius: 18px; background: white; box-shadow: 0 8px 28px rgba(16, 42, 67, 0.06); }
+.reward-summary { max-width: 1000px; margin: 18px auto; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border: 1px solid var(--line); border-radius: 18px; background: white; }
+.reward-summary p { margin: 6px 0; }
+.reward-summary small { color: var(--ink-soft); }
 .mode-tabs button { min-height: 58px; display: grid; place-content: center; gap: 2px; border: 0; border-radius: 12px; color: var(--ink-soft); background: transparent; }
 .mode-tabs button:hover { color: var(--ink); background: #eff4f6; }
 .mode-tabs button[aria-pressed="true"] { color: white; background: var(--ink); box-shadow: 0 7px 16px rgba(16, 42, 67, 0.2); }
@@ -105,10 +108,17 @@ h2 { margin-bottom: 0; font-size: clamp(1.35rem, 2vw, 2rem); letter-spacing: -0.
 .banner strong { white-space: nowrap; }
 .banner.error { border-color: #efb4ad; color: #842c27; background: var(--danger-soft); }
 .banner.notice { border-color: #9ed9b7; color: var(--mint-ink); background: #effff5; }
+.banner.campaign { border-color: #8bc7a1; color: #174f32; background: #edf9f1; }
 
 .workspace { width: min(1440px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 390px); align-items: start; gap: 20px; margin: 0 auto; padding: 20px 24px max(28px, env(safe-area-inset-bottom)); }
 .catalog-column { min-width: 0; display: grid; gap: 16px; }
-.catalog, .reason-wrap, .order-ticket { border: 1px solid var(--line); background: white; box-shadow: 0 12px 34px rgba(16, 42, 67, 0.06); }
+.catalog, .reason-wrap, .cup-type-picker, .order-ticket { border: 1px solid var(--line); background: white; box-shadow: 0 12px 34px rgba(16, 42, 67, 0.06); }
+.cup-type-picker { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 22px; border-radius: 22px 22px 22px 8px; }
+.cup-type-picker h2 { margin-top: 3px; font-size: 1.1rem; }
+.cup-type-actions { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: 8px; }
+.cup-type-actions button { min-height: 54px; display: grid; place-content: center; gap: 2px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: var(--paper); font-weight: 850; }
+.cup-type-actions button[aria-pressed="true"] { border-color: var(--mint-ink); color: white; background: var(--mint-ink); }
+.cup-type-actions small { font-family: var(--utility); font-size: 0.62rem; }
 .catalog { padding: clamp(20px, 3vw, 30px); border-radius: 26px 26px 26px 9px; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
 .section-heading p:not(.eyebrow) { margin: 7px 0 0; color: var(--ink-soft); line-height: 1.45; }
@@ -282,7 +292,7 @@ h2 { margin-bottom: 0; font-size: clamp(1.35rem, 2vw, 2rem); letter-spacing: -0.
   .counter-brand .eyebrow { display: none; }
   .counter-brand strong { font-size: 0.96rem; }
   .button.compact { font-size: 0.78rem; }
-  .mode-tabs { overflow-x: auto; grid-template-columns: repeat(3, minmax(112px, 1fr)); }
+  .mode-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .section-heading { align-items: flex-start; }
   .menu-count { display: none; }
   .catalog { padding: 18px 14px; }

@@ -99,8 +99,8 @@ function buildExpenseMarkdownReport_(rows, yearMonth, generatedAt) {
   expenseValidateYearMonth_(yearMonth)
   var matchingRows = expenseFilterReportRows_(rows, yearMonth)
   matchingRows.sort(function (left, right) {
-    var leftDate = expenseReportValue_(left, 'purchase_date')
-    var rightDate = expenseReportValue_(right, 'purchase_date')
+    var leftDate = expenseFormatLocalDate_(expenseReportValue_(left, 'purchase_date'))
+    var rightDate = expenseFormatLocalDate_(expenseReportValue_(right, 'purchase_date'))
     if (leftDate !== rightDate) return leftDate < rightDate ? -1 : 1
     var leftId = expenseReportValue_(left, 'expense_id')
     var rightId = expenseReportValue_(right, 'expense_id')
@@ -131,7 +131,7 @@ function buildExpenseMarkdownReport_(rows, yearMonth, generatedAt) {
     var receiptUrl = expenseReportValue_(row, 'receipt_url')
     lines.push('| ' + [
       expenseReportTableValue_(expenseReportValue_(row, 'expense_id')),
-      expenseReportTableValue_(expenseReportValue_(row, 'purchase_date')),
+      expenseReportTableValue_(expenseFormatLocalDate_(expenseReportValue_(row, 'purchase_date'))),
       expenseReportTableValue_(expenseReportValue_(row, 'member_name')),
       expenseReportTableValue_(expenseReportValue_(row, 'vendor')),
       expenseReportTableValue_(expenseReportValue_(row, 'description')),
@@ -205,6 +205,7 @@ function expenseEscapeMarkdown_(value) {
 }
 
 function expenseFormatReportAmount_(value) {
+  if (value === undefined || value === null || value === '') return '-'
   var amount = Number(value)
   return isFinite(amount) ? 'MOP ' + amount.toFixed(2) : '-'
 }

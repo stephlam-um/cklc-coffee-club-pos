@@ -44,7 +44,7 @@ export async function getTodayOrders(supabase) {
   const orders = (data || []).map(row => normalizeDashboardOrder({
     transactionId: row.id, timestamp: row.created_at, shiftId: row.shift_id, staffId: row.staff_id,
     staffName: row.staff?.name || row.staff_id, type: row.type,
-    items: (row.transaction_items || []).map(item => ({ productId: item.product_id, name: item.product_name, temperature: item.temperature, quantity: item.quantity, unitPrice: Number(item.unit_price), lineTotal: Number(item.line_total) })),
+    items: (row.transaction_items || []).map(item => ({ productId: item.product_id, name: item.product_name, temperature: item.temperature, cupType: item.cup_type || 'DINE_IN', quantity: item.quantity, baseUnitPrice: Number(item.base_unit_price ?? item.unit_price), discountUnitPrice: Number(item.discount_unit_price || 0), campaignId: item.campaign_id || '', unitPrice: Number(item.unit_price), lineTotal: Number(item.line_total) })),
     total: Number(row.total), paymentMethod: row.payment_method, wasteReason: row.waste_reason,
     fulfillmentStatus: row.fulfillment_status, completedAt: row.completed_at, completedBy: row.completed_by,
   }))
@@ -71,7 +71,7 @@ function toDashboardOrder(row) {
   return normalizeDashboardOrder({
     transactionId: row.id, timestamp: row.created_at, shiftId: row.shift_id, staffId: row.staff_id,
     staffName: row.staff?.name || row.staff_id, type: row.type,
-    items: (row.transaction_items || []).map(item => ({ productId: item.product_id, name: item.product_name, temperature: item.temperature, quantity: item.quantity, unitPrice: Number(item.unit_price), lineTotal: Number(item.line_total) })),
+    items: (row.transaction_items || []).map(item => ({ productId: item.product_id, name: item.product_name, temperature: item.temperature, cupType: item.cup_type || 'DINE_IN', quantity: item.quantity, baseUnitPrice: Number(item.base_unit_price ?? item.unit_price), discountUnitPrice: Number(item.discount_unit_price || 0), campaignId: item.campaign_id || '', unitPrice: Number(item.unit_price), lineTotal: Number(item.line_total) })),
     total: Number(row.total), paymentMethod: row.payment_method, wasteReason: row.waste_reason,
     fulfillmentStatus: row.fulfillment_status, completedAt: row.completed_at, completedBy: row.completed_by,
   })

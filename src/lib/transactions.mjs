@@ -1,16 +1,22 @@
-import { calculateCartTotal, getUnitPrice, normalizeTemperature } from './domain.mjs'
+import { calculateCartTotal, getRmbUnitPrice, getUnitPrice, normalizeCupType, normalizeTemperature, isPersonalCupCampaignActive, isRewardEligible, PERSONAL_CUP_CAMPAIGN_ID, PERSONAL_CUP_DISCOUNT } from './domain.mjs'
 
 const PENDING_TRANSACTION_PREFIX = 'pos.pending-transaction:v1:'
 
-export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paymentMethod = '', wasteReason = '' }) {
-  const items = cart.map(({ product, temperature, quantity }) => {
-    const unitPrice = getUnitPrice(product, mode)
+export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paymentMethod = '', wasteReason = '', now = new Date() }) {
+  const free = mode === 'WASTE' || mode === 'STAFF_REWARD'
+  if (mode === 'STAFF_REWARD' && cart.some(line => !isRewardEligible(line.product))) throw new Error('XXL drinks cannot be redeemed')
+  const items = cart.map(({ product, temperature, cupType: rawCupType, quantity }) => {
+    const cupType = normalizeCupType(rawCupType)
+    const personalCup = mode === 'NORMAL_SALE' && cupType === 'PERSONAL_CUP' && isPersonalCupCampaignActive(now)
+    const unitPrice = getUnitPrice(product, mode, cupType, now)
     return {
       productId: product.id,
       name: product.name,
       temperature: normalizeTemperature(temperature),
       quantity,
+      ...(personalCup ? { cupType, baseUnitPrice: Number(product.price), discountUnitPrice: PERSONAL_CUP_DISCOUNT, campaignId: PERSONAL_CUP_CAMPAIGN_ID } : {}),
       unitPrice,
+      rmbUnitPrice: free ? null : getRmbUnitPrice(unitPrice),
       lineTotal: unitPrice * quantity,
     }
   })
@@ -20,8 +26,8 @@ export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paym
     staffId,
     type: mode,
     items,
-    total: mode === 'WASTE' ? 0 : calculateCartTotal(cart, mode),
-    paymentMethod: mode === 'WASTE' ? '' : paymentMethod,
+    total: mode === 'WASTE' ? 0 : calculateCartTotal(cart, mode, now),
+    paymentMethod: free ? '' : paymentMethod,
     wasteReason: mode === 'WASTE' ? wasteReason : '',
   }
 }
@@ -81,7 +87,7 @@ export function restoreCheckoutDraft(products, transaction) {
   const cart = transaction.items.map(item => {
     const product = products.find(candidate => String(candidate.id) === String(item.productId))
     if (!product || !Number.isInteger(item.quantity) || item.quantity <= 0) return null
-    return { product, temperature: normalizeTemperature(item.temperature), quantity: item.quantity }
+    return { product, temperature: normalizeTemperature(item.temperature), ...(item.cupType ? { cupType: normalizeCupType(item.cupType) } : {}), quantity: item.quantity }
   })
   if (cart.some(item => !item)) return null
   return { cart, mode: transaction.type, wasteReason: transaction.wasteReason || 'MADE_WRONG' }

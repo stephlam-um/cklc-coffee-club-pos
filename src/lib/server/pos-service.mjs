@@ -27,7 +27,8 @@ export async function createOrGetTransaction(supabase, rawInput, actor) {
     },
     p_items: input.items.map(item => ({
       product_id: item.productId, product_name: item.name, temperature: item.temperature,
-      quantity: item.quantity, unit_price: item.unitPrice, line_total: item.lineTotal,
+      quantity: item.quantity, unit_price: item.unitPrice, rmb_unit_price: item.rmbUnitPrice, line_total: item.lineTotal,
+      cup_type: item.cupType, base_unit_price: item.baseUnitPrice, discount_unit_price: item.discountUnitPrice, campaign_id: item.campaignId,
     })),
   })
   if (error) {

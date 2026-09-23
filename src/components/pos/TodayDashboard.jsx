@@ -63,9 +63,9 @@ export default function TodayDashboard({ data, pendingData, loading, error, staf
         </div>
         <div className="dashboard-order-body">
           <div className="dashboard-order-items">
-            {order.items.map((item, index) => <div key={`${order.transactionId}-${item.productId}-${item.temperature || 'legacy'}-${index}`}><span>{item.quantity} × {item.name}{item.temperature && <em> · {formatTemperature(item.temperature)}</em>}</span><small>{formatMop(item.lineTotal)}</small></div>)}
+            {order.items.map((item, index) => <div key={`${order.transactionId}-${item.productId}-${item.temperature || 'legacy'}-${index}`}><span>{item.quantity} × {item.name}{item.temperature && <em> · {formatTemperature(item.temperature)}</em>}{item.cupType === 'PERSONAL_CUP' && <em> · Personal Cup</em>}</span><small>{formatMop(item.lineTotal)}</small></div>)}
           </div>
-          <div className="dashboard-order-meta"><span>{PAYMENT_LABELS[order.paymentMethod] || 'No payment'}</span><span>By {order.staffName}</span><span>#{order.transactionId.slice(-6)}</span></div>
+          <div className="dashboard-order-meta"><span>{order.type === 'STAFF_REWARD' ? 'Staff Reward · Free Drink' : PAYMENT_LABELS[order.paymentMethod] || 'No payment'}</span><span>By {order.staffName}</span><span>#{order.transactionId.slice(-6)}</span></div>
         </div>
         <button className="order-status-button" type="button" disabled={updatingId === order.transactionId} onClick={() => changeStatus(order)}>
           {updatingId === order.transactionId ? 'Saving…' : completed ? 'Mark as Pending' : 'Mark as Completed'}
@@ -77,7 +77,7 @@ export default function TodayDashboard({ data, pendingData, loading, error, staf
   function renderDeletionReview(order) {
     return <article className="dashboard-order is-pending" key={`review-${order.transactionId}`}>
       <div className="dashboard-order-topline"><div><span className="order-status"><span aria-hidden="true" />Pending</span><span className="order-time">{formatOrderTime(order.timestamp)}</span></div><strong className="order-total">{formatMop(order.total)}</strong></div>
-      <div className="dashboard-order-body"><div className="dashboard-order-items">{order.items.map((item, index) => <div key={`${order.transactionId}-${index}`}><span>{item.quantity} × {item.name}</span><small>{formatMop(item.lineTotal)}</small></div>)}</div><div className="dashboard-order-meta"><span>{PAYMENT_LABELS[order.paymentMethod] || 'No payment'}</span><span>By {order.staffName}</span><span>#{order.transactionId.slice(-6)}</span></div></div>
+      <div className="dashboard-order-body"><div className="dashboard-order-items">{order.items.map((item, index) => <div key={`${order.transactionId}-${index}`}><span>{item.quantity} × {item.name}{item.cupType === 'PERSONAL_CUP' && <em> · Personal Cup</em>}</span><small>{formatMop(item.lineTotal)}</small></div>)}</div><div className="dashboard-order-meta"><span>{PAYMENT_LABELS[order.paymentMethod] || 'No payment'}</span><span>By {order.staffName}</span><span>#{order.transactionId.slice(-6)}</span></div></div>
       <button className="order-status-button danger" type="button" disabled={updatingId === order.transactionId} onClick={() => requestDeletion(order)}>{updatingId === order.transactionId ? 'Deleting…' : 'Delete permanently'}</button>
     </article>
   }

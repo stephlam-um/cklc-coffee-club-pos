@@ -1,7 +1,11 @@
 import { buildOrderStatusPayload } from './dashboard.mjs'
+import { createDemoPosApi } from './demo-pos-api.mjs'
+
+export const isDemoMode = process.env.NEXT_PUBLIC_POS_DEMO_MODE === 'true'
 
 const routes = {
   getBootstrap: ['GET', '/api/bootstrap'],
+  getStaffRewards: ['GET', '/api/staff/rewards'],
   login: ['POST', '/api/login'],
   openShift: ['POST', '/api/shifts/open'],
   createTransaction: ['POST', '/api/transactions'],
@@ -21,9 +25,9 @@ async function request(action, data = {}) {
     credentials: 'include',
     body: method === 'GET' ? undefined : JSON.stringify(data),
   })
-  if (!response.ok) throw new Error(`POS API returned HTTP ${response.status}`)
-  const body = await response.json()
-  if (!body.ok) {
+  const body = await response.json().catch(() => null)
+  if (!body) throw new Error(`POS API returned HTTP ${response.status}`)
+  if (!response.ok || !body.ok) {
     const error = new Error(body.error || 'POS API request failed')
     error.code = body.code
     throw error
@@ -31,7 +35,8 @@ async function request(action, data = {}) {
   return body.data
 }
 
-export const posApi = {
+const livePosApi = {
+  getStaffRewards: () => request('getStaffRewards'),
   getBootstrap: () => request('getBootstrap'),
   login: (staffId, pin) => request('login', { staffId, pin }),
   openShift: (staffId) => request('openShift', { staffId }),
@@ -42,3 +47,5 @@ export const posApi = {
   updateOrderStatus: (transactionId, fulfillmentStatus, staffId) => request('updateOrderStatus', buildOrderStatusPayload(transactionId, fulfillmentStatus, staffId)),
   deletePendingOrder: (transactionId) => request('deletePendingOrder', { transactionId }),
 }
+
+export const posApi = isDemoMode ? createDemoPosApi() : livePosApi

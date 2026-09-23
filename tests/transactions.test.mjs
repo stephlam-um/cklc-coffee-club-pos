@@ -17,13 +17,25 @@ test('normal sale payload contains normal-priced line items and payment method',
   assert.equal(payload.type, 'NORMAL_SALE')
   assert.equal(payload.total, 36)
   assert.equal(payload.paymentMethod, 'MPAY')
-  assert.deepEqual(payload.items, [{ productId: 'latte', name: 'Latte', temperature: 'HOT', quantity: 2, unitPrice: 18, lineTotal: 36 }])
+  assert.deepEqual(payload.items, [{ productId: 'latte', name: 'Latte', temperature: 'HOT', quantity: 2, unitPrice: 18, rmbUnitPrice: 16, lineTotal: 36 }])
+})
+
+test('personal-cup payload records the campaign and discounted MOP and RMB prices', () => {
+  const personalCupCart = [{ product: latte, temperature: 'ICED', cupType: 'PERSONAL_CUP', quantity: 2 }]
+  const payload = buildTransactionPayload({ id: 'tx-cup', shiftId: 'shift-1', staffId: 's1', mode: 'NORMAL_SALE', cart: personalCupCart, paymentMethod: 'MPAY', now: new Date('2026-09-24T04:00:00Z') })
+
+  assert.equal(payload.total, 30)
+  assert.deepEqual(payload.items, [{
+    productId: 'latte', name: 'Latte', temperature: 'ICED', cupType: 'PERSONAL_CUP', quantity: 2,
+    baseUnitPrice: 18, discountUnitPrice: 3, campaignId: 'PERSONAL_CUP_2026', unitPrice: 15, rmbUnitPrice: 13, lineTotal: 30,
+  }])
 })
 
 test('staff payload uses staff price only', () => {
   const payload = buildTransactionPayload({ id: 'tx-2', shiftId: 'shift-1', staffId: 's1', mode: 'STAFF', cart, paymentMethod: 'WECHAT_PAY' })
   assert.equal(payload.total, 18)
   assert.equal(payload.items[0].unitPrice, 9)
+  assert.equal(payload.items[0].rmbUnitPrice, 7)
 })
 
 test('waste payload has zero total and no payment method', () => {
@@ -62,4 +74,11 @@ test('restoreCheckoutDraft rebuilds the cart from a pending transaction', () => 
   assert.equal(restored.mode, 'NORMAL_SALE')
   assert.equal(restored.wasteReason, 'MADE_WRONG')
   assert.deepEqual(restored.cart, cart)
+})
+
+
+test('restoreCheckoutDraft preserves personal-cup lines', () => {
+  const personalCupCart = [{ product: latte, temperature: 'ICED', cupType: 'PERSONAL_CUP', quantity: 1 }]
+  const transaction = buildTransactionPayload({ id: 'tx-cup-pending', shiftId: 'shift-1', staffId: 's1', mode: 'NORMAL_SALE', cart: personalCupCart, paymentMethod: 'MPAY', now: new Date('2026-09-24T04:00:00Z') })
+  assert.deepEqual(restoreCheckoutDraft([latte], transaction).cart, personalCupCart)
 })
