@@ -28,6 +28,12 @@ function createHarness() {
             for (let c = 0; c < numColumns; c++) this.rows[target][column - 1 + c] = values[r][c]
           }
         },
+        clearContent: () => {
+          for (let r = 0; r < numRows; r++) {
+            const target = row - 1 + r
+            if (this.rows[target]) this.rows[target].fill('')
+          }
+        },
         setValue: value => this.getRange(row, column, 1, 1).setValues([[value]]),
       }
     }
@@ -41,6 +47,10 @@ function createHarness() {
   }
 
   const responses = {
+    financialEntries: [
+      { pay_date: '2026-08-27', acc_code: '1.1', description: '當日櫃檯銷售收入', currency: 'MOP', amount: 18, remarks: 'MPAY, received by Cici' },
+      { pay_date: '2026-08-28', acc_code: '1.2', description: '當日櫃檯銷售收入', currency: 'RMB', amount: 16, remarks: 'WeChat; RMB unit price is MOP unit price minus 2, received by Hani' },
+    ],
     shifts: [{ id: 'shift-1', staff_id: 'cici', opened_at: '2026-08-27T01:00:00.000Z', closed_at: '2026-08-27T03:00:00.000Z', mpay_expected: 10, wechat_expected: 8, mpay_actual: 10, wechat_actual: 8, difference: 0, note: '' }, { id: 'shift-2', staff_id: 'hani', opened_at: '2026-08-27T04:00:00.000Z', closed_at: '2026-08-27T06:00:00.000Z', mpay_expected: 12, wechat_expected: 0, mpay_actual: 12, wechat_actual: 0, difference: 0, note: '' }],
     transactions: [{ id: 'tx-1', shift_id: 'shift-1', staff_id: 'cici', type: 'NORMAL_SALE', total: 18, payment_method: 'MPAY', waste_reason: '', fulfillment_status: 'COMPLETED', created_at: '2026-08-27T02:00:00.000Z', transaction_items: [] }, { id: 'tx-2', shift_id: 'shift-2', staff_id: 'hani', type: 'STAFF', total: 9, payment_method: 'WECHAT_PAY', waste_reason: '', fulfillment_status: 'PENDING', created_at: '2026-08-27T05:00:00.000Z', transaction_items: [] }, { id: 'orphan', shift_id: 'shift-open', staff_id: 'hani', type: 'NORMAL_SALE', total: 20, payment_method: 'MPAY', created_at: '2026-08-27T05:30:00.000Z', transaction_items: [] }],
   }
@@ -50,7 +60,7 @@ function createHarness() {
     PropertiesService: { getScriptProperties: () => ({ getProperty: key => properties[key] || '' }) },
     UrlFetchApp: { fetch: (url, options) => {
       calls.push({ url, options })
-      const data = url.includes('/shifts?') ? responses.shifts : responses.transactions
+      const data = url.includes('/rpc/get_financial_entries') ? responses.financialEntries : []
       return { getResponseCode: () => 200, getContentText: () => JSON.stringify(data) }
     } },
     Utilities: { formatDate: date => date.toISOString().slice(0, 10), getUuid: () => 'uuid' },
@@ -62,22 +72,24 @@ function createHarness() {
   vm.runInNewContext(code, context)
   sheets.set('Report_Shifts', new Sheet('Report_Shifts', [['shift_id','staff_id','opened_at','closed_at','mpay_expected','wechat_expected','mpay_actual','wechat_actual','difference','note','synced_at'], ['shift-1','old-staff','','',0,0,0,0,0,'old','old']]))
   sheets.set('Report_Transactions', new Sheet('Report_Transactions', [['transaction_id','shift_id','staff_id','type','total','payment_method','waste_reason','fulfillment_status','created_at','items_json','synced_at'], ['tx-1','shift-1','old-staff','NORMAL_SALE',0,'','','PENDING','','[]','old']]))
+  sheets.set('Financial_Entries', new Sheet('Financial_Entries', [['Pay Date','Acc Code','Description','Currency','Amount','Remarks'], ['old-date','1.9','Old','MOP',999,'old']]))
   return { context, sheets, calls, getCreatedTriggers: () => createdTriggers }
 }
 
-test('daily Supabase export upserts closed shifts and their transactions without duplicates', () => {
+test('daily Supabase export replaces the Financial_Entries sheet with current Supabase rows', () => {
   const { context, sheets, calls } = createHarness()
   const first = context.exportSupabaseReports()
   const second = context.exportSupabaseReports()
 
-  assert.equal(first.shiftCount, 2)
-  assert.equal(first.transactionCount, 2)
-  assert.equal(second.shiftCount, 2)
-  assert.equal(sheets.get('Report_Shifts').rows.length, 3)
-  assert.equal(sheets.get('Report_Transactions').rows.length, 3)
-  assert.equal(sheets.get('Report_Shifts').rows[1][1], 'cici')
-  assert.equal(sheets.get('Report_Transactions').rows[1][3], 'NORMAL_SALE')
-  assert.equal(calls.length, 4)
+  assert.equal(first.entryCount, 2)
+  assert.equal(second.entryCount, 2)
+  assert.equal(sheets.get('Financial_Entries').rows.length, 3)
+  assert.deepEqual(sheets.get('Financial_Entries').rows[1], ['2026-08-27','1.1','當日櫃檯銷售收入','MOP',18,'MPAY, received by Cici'])
+  assert.deepEqual(sheets.get('Financial_Entries').rows[2], ['2026-08-28','1.2','當日櫃檯銷售收入','RMB',16,'WeChat; RMB unit price is MOP unit price minus 2, received by Hani'])
+  assert.match(calls[0].url, /\/rpc\/get_financial_entries/)
+  assert.equal(calls[0].options.method, 'post')
+  assert.deepEqual(JSON.parse(calls[0].options.payload), {})
+  assert.equal(calls.length, 2)
 })
 
 test('setupDailySupabaseExport creates one Singapore trigger at 03:00', () => {

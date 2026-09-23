@@ -115,7 +115,7 @@ function createTransaction_(tx) {
 }
 
 function closeShift_(payload) {
-  const rows = rowsAsObjects_(SHEETS.TRANSACTIONS).filter(r => String(r.shift_id) === String(payload.shiftId) && String(r.status) === 'COMPLETED');
+  const rows = rowsAsObjects_(SHEETS.TRANSACTIONS).filter(r => String(r.shift_id) === String(payload.shiftId) && String(r.status) === 'COMPLETED' && String(r.fulfillment_status || 'PENDING') === 'COMPLETED');
   const mpayExpected = rows.filter(r => r.payment_method === 'MPAY').reduce((s,r)=>s+Number(r.total||0),0);
   const wechatExpected = rows.filter(r => r.payment_method === 'WECHAT_PAY').reduce((s,r)=>s+Number(r.total||0),0);
   const mpayActual = Number(payload.mpayActual || 0), wechatActual = Number(payload.wechatActual || 0);
@@ -132,14 +132,11 @@ function closeShift_(payload) {
 
 function syncClosedShift_(payload) {
   const shift = payload.shift;
-  const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
+  const financialEntries = Array.isArray(payload.financialEntries) ? payload.financialEntries : [];
   if (!shift || !shift.id || String(shift.status) !== 'CLOSED') throw new Error('Closed shift payload required');
   const ss = SpreadsheetApp.getActive();
-  const shiftSheet = ensureReportSheet_(ss, 'Report_Shifts', ['shift_id','staff_id','opened_at','closed_at','mpay_expected','wechat_expected','mpay_actual','wechat_actual','difference','note','synced_at']);
-  const transactionSheet = ensureReportSheet_(ss, 'Report_Transactions', ['transaction_id','shift_id','staff_id','type','total','payment_method','waste_reason','fulfillment_status','created_at','items_json','synced_at']);
-  upsertReportRow_(shiftSheet, 1, String(shift.id), [String(shift.id), String(shift.staff_id || ''), shift.opened_at || '', shift.closed_at || '', Number(shift.mpay_expected || 0), Number(shift.wechat_expected || 0), Number(shift.mpay_actual || 0), Number(shift.wechat_actual || 0), Number(shift.difference || 0), String(shift.note || ''), new Date()]);
-  transactions.forEach(tx => upsertReportRow_(transactionSheet, 1, String(tx.id), [String(tx.id), String(tx.shift_id || shift.id), String(tx.staff_id || ''), String(tx.type || ''), Number(tx.total || 0), String(tx.payment_method || ''), String(tx.waste_reason || ''), String(tx.fulfillment_status || ''), tx.created_at || '', JSON.stringify(tx.transaction_items || []), new Date()]));
-  return { shiftId: String(shift.id), transactionCount: transactions.length, status: 'SYNCED' };
+  const entryCount = replaceFinancialEntries_(ss, financialEntries);
+  return { shiftId: String(shift.id), entryCount: entryCount, status: 'SYNCED' };
 }
 
 // Run this function manually once after setting the script properties below.
@@ -150,17 +147,11 @@ function exportSupabaseReports() {
   const serviceRoleKey = String(properties.getProperty('SUPABASE_SERVICE_ROLE_KEY') || '');
   if (!supabaseUrl || !serviceRoleKey) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured in Script Properties');
 
-  const shifts = fetchSupabaseRows_(supabaseUrl, serviceRoleKey, 'shifts?status=eq.CLOSED&select=id,staff_id,opened_at,closed_at,mpay_expected,wechat_expected,mpay_actual,wechat_actual,difference,note&order=closed_at.asc,id.asc');
-  const closedShiftIds = shifts.reduce((map, shift) => { map[String(shift.id)] = true; return map; }, {});
-  const allTransactions = fetchSupabaseRows_(supabaseUrl, serviceRoleKey, 'transactions?status=eq.COMPLETED&select=id,shift_id,staff_id,type,total,payment_method,waste_reason,fulfillment_status,created_at,transaction_items(*)&order=created_at.asc,id.asc');
-  const transactions = allTransactions.filter(transaction => closedShiftIds[String(transaction.shift_id)]);
+  const financialEntries = fetchSupabaseRpcRows_(supabaseUrl, serviceRoleKey, 'get_financial_entries', {});
   const syncedAt = new Date();
   const ss = SpreadsheetApp.getActive();
-  const shiftSheet = ensureReportSheet_(ss, 'Report_Shifts', ['shift_id','staff_id','opened_at','closed_at','mpay_expected','wechat_expected','mpay_actual','wechat_actual','difference','note','synced_at']);
-  const transactionSheet = ensureReportSheet_(ss, 'Report_Transactions', ['transaction_id','shift_id','staff_id','type','total','payment_method','waste_reason','fulfillment_status','created_at','items_json','synced_at']);
-  upsertReportRows_(shiftSheet, 'shift_id', shifts.map(shift => [String(shift.id), String(shift.staff_id || ''), shift.opened_at || '', shift.closed_at || '', Number(shift.mpay_expected || 0), Number(shift.wechat_expected || 0), Number(shift.mpay_actual || 0), Number(shift.wechat_actual || 0), Number(shift.difference || 0), String(shift.note || ''), syncedAt]));
-  upsertReportRows_(transactionSheet, 'transaction_id', transactions.map(transaction => [String(transaction.id), String(transaction.shift_id || ''), String(transaction.staff_id || ''), String(transaction.type || ''), Number(transaction.total || 0), String(transaction.payment_method || ''), String(transaction.waste_reason || ''), String(transaction.fulfillment_status || ''), transaction.created_at || '', JSON.stringify(transaction.transaction_items || []), syncedAt]));
-  return { shiftCount: shifts.length, transactionCount: transactions.length, status: 'EXPORTED', syncedAt: syncedAt.toISOString() };
+  const entryCount = replaceFinancialEntries_(ss, financialEntries);
+  return { entryCount: entryCount, status: 'EXPORTED', syncedAt: syncedAt.toISOString() };
 }
 
 function setupDailySupabaseExport() {
@@ -190,10 +181,44 @@ function fetchSupabaseRows_(supabaseUrl, serviceRoleKey, resource) {
   }
 }
 
+function fetchSupabaseRpcRows_(supabaseUrl, serviceRoleKey, functionName, parameters) {
+  const pageSize = 500;
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const url = supabaseUrl + '/rest/v1/rpc/' + encodeURIComponent(functionName) + '?limit=' + pageSize + '&offset=' + offset;
+    const response = UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'application/json', payload: JSON.stringify(parameters || {}),
+      headers: { apikey: serviceRoleKey, Authorization: 'Bearer ' + serviceRoleKey, Accept: 'application/json' }, muteHttpExceptions: true,
+    });
+    const status = response.getResponseCode();
+    if (status < 200 || status >= 300) throw new Error('Supabase RPC export failed: HTTP ' + status);
+    let batch;
+    try { batch = JSON.parse(response.getContentText() || '[]'); } catch (error) { throw new Error('Supabase RPC export returned invalid JSON'); }
+    if (!Array.isArray(batch)) throw new Error('Supabase RPC export returned an unexpected response');
+    rows.push.apply(rows, batch);
+    if (batch.length < pageSize) return rows;
+    offset += pageSize;
+  }
+}
+
 function ensureReportSheet_(ss, name, headers) {
   const sheet = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
   return sheet;
+}
+
+function replaceFinancialEntries_(ss, entries) {
+  const headers = ['Pay Date','Acc Code','Description','Currency','Amount','Remarks'];
+  const sheet = ensureReportSheet_(ss, 'Financial_Entries', headers);
+  const existingRows = sheet.getLastRow() - 1;
+  if (existingRows > 0) sheet.getRange(2, 1, existingRows, headers.length).clearContent();
+  const rows = entries.map(entry => [
+    String(entry.pay_date || ''), String(entry.acc_code || ''), String(entry.description || ''),
+    String(entry.currency || ''), Number(entry.amount || 0), String(entry.remarks || ''),
+  ]);
+  if (rows.length) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  return rows.length;
 }
 
 function upsertReportRow_(sheet, keyColumn, key, row) {

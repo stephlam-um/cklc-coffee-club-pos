@@ -1,6 +1,7 @@
 import { formatMop, formatTemperature, paymentActionLabel } from '@/lib/presentation.mjs'
+import { getUnitPrice, normalizeCupType } from '@/lib/domain.mjs'
 
-export default function OrderTicket({ cart, mode, total, submitting, pending = false, online = true, onChangeQuantity, onClear, onCheckout }) {
+export default function OrderTicket({ cart, mode, total, submitting, pending = false, online = true, rewardAvailable = 0, onChangeQuantity, onClear, onCheckout }) {
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0)
 
   return (
@@ -20,17 +21,18 @@ export default function OrderTicket({ cart, mode, total, submitting, pending = f
 
       <div className="cart-lines">
         {cart.length ? cart.map(line => {
-          const unitPrice = mode === 'STAFF' ? line.product.staffPrice : line.product.price
+          const cupType = normalizeCupType(line.cupType)
+          const unitPrice = getUnitPrice(line.product, mode, cupType)
           return (
-            <div className="cart-line" key={`${line.product.id}-${line.temperature}`}>
+            <div className="cart-line" key={`${line.product.id}-${line.temperature}-${cupType}`}>
               <div className="line-copy">
                 <strong>{line.product.name}</strong>
-                <small>{[formatTemperature(line.temperature), mode === 'WASTE' ? line.product.category : `${formatMop(unitPrice)} Each`].filter(Boolean).join(' · ')}</small>
+                <small>{[formatTemperature(line.temperature), mode === 'NORMAL_SALE' ? (cupType === 'PERSONAL_CUP' ? 'Personal Cup · $3 Off' : 'Dine In') : '', mode === 'WASTE' ? line.product.category : `${formatMop(unitPrice)} Each`].filter(Boolean).join(' · ')}</small>
               </div>
               <div className="qty" aria-label={`Quantity for ${formatTemperature(line.temperature)} ${line.product.name}`}>
-                <button type="button" disabled={pending || submitting} aria-label={`Remove one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, -1)}>−</button>
+                <button type="button" disabled={pending || submitting} aria-label={`Remove one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, -1, cupType)}>−</button>
                 <output aria-live="polite">{line.quantity}</output>
-                <button type="button" disabled={pending || submitting} aria-label={`Add one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, 1)}>+</button>
+                <button type="button" disabled={pending || submitting || (mode === 'STAFF_REWARD' && itemCount >= rewardAvailable)} aria-label={`Add one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, 1, cupType)}>+</button>
               </div>
             </div>
           )
@@ -45,7 +47,11 @@ export default function OrderTicket({ cart, mode, total, submitting, pending = f
 
       <div className="checkout">
         <div className="total"><span>Total</span><strong>{formatMop(total)}</strong></div>
-        {mode === 'WASTE' ? (
+        {mode === 'STAFF_REWARD' ? (
+          <button className="button primary full-width" type="button" disabled={!cart.length || submitting || !online || (!pending && itemCount > rewardAvailable)} onClick={() => onCheckout()}>
+            {submitting ? 'Redeeming…' : pending ? 'Confirm Redemption' : `Redeem ${itemCount} Free Drink${itemCount === 1 ? '' : 's'}`}
+          </button>
+        ) : mode === 'WASTE' ? (
           <button className="button waste-action full-width" type="button" disabled={!cart.length || submitting || !online} onClick={() => onCheckout()}>
             {submitting ? 'Recording Waste…' : `Record ${itemCount || 0} Waste Item${itemCount === 1 ? '' : 's'}`}
           </button>

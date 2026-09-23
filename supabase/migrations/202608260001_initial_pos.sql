@@ -142,7 +142,7 @@ begin
   select * into shift_row from shifts where id = p_shift_id and staff_id = p_staff_id for update;
   if not found or shift_row.status <> 'OPEN' then raise exception 'Open shift not found' using errcode = 'P0001'; end if;
   select coalesce(sum(total) filter (where payment_method = 'MPAY'), 0), coalesce(sum(total) filter (where payment_method = 'WECHAT_PAY'), 0)
-    into v_mpay_expected, v_wechat_expected from transactions where shift_id = p_shift_id and status = 'COMPLETED';
+    into v_mpay_expected, v_wechat_expected from transactions where shift_id = p_shift_id and status = 'COMPLETED' and fulfillment_status = 'COMPLETED';
   v_difference := (coalesce(p_mpay_actual, 0) + coalesce(p_wechat_actual, 0)) - (v_mpay_expected + v_wechat_expected);
   update shifts set closed_at = now(), mpay_expected = v_mpay_expected, wechat_expected = v_wechat_expected,
     mpay_actual = coalesce(p_mpay_actual, 0), wechat_actual = coalesce(p_wechat_actual, 0), difference = v_difference,
