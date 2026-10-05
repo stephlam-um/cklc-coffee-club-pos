@@ -160,7 +160,7 @@ export default function PosPage() {
   }
 
   async function deletePendingOrder(order) {
-    if (!window.confirm(`Permanently delete order #${order.transactionId.slice(-6)}? This erases the transaction and its items and cannot be undone.`)) return
+    if (!window.confirm(`Permanently delete ${order.type === 'WASTE' ? 'waste record' : 'order'} #${order.transactionId.slice(-6)}? This erases the transaction and its items and cannot be undone.`)) return
     await posApi.deletePendingOrder(order.transactionId)
     void loadRewards()
     setPendingOrdersData(previous => previous ? { ...previous, orders: previous.orders.filter(item => item.transactionId !== order.transactionId) } : previous)
@@ -266,6 +266,8 @@ export default function PosPage() {
       if (mode === 'STAFF_REWARD') {
         setError(caught.message === 'INSUFFICIENT_REWARDS' ? 'Not enough free drinks available. Clear this ticket to change the quantity, or complete more sales before retrying.' : `Couldn’t confirm this redemption: ${caught.message}. Your ticket is still here; retry to confirm it.`)
         void loadRewards()
+      } else if (mode === 'WASTE') {
+        setError(`Couldn’t record waste: ${caught.message}. Your ticket is still here; retry to confirm it.`)
       } else {
         setError(`${caught.code === 'CONFLICTING_TRANSACTION' ? 'This ticket changed while it was being retried.' : 'Couldn’t confirm this payment. Retry to check the same transaction.'} Your order is still here.`)
       }

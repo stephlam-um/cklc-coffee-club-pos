@@ -36,11 +36,11 @@ export function validateTransactionInput(input, now = new Date()) {
       if (input.type !== 'NORMAL_SALE' || campaignId !== PERSONAL_CUP_CAMPAIGN_ID || discountUnitPrice !== 3 || baseUnitPrice - discountUnitPrice !== unitPrice) throw new Error('Invalid personal-cup discount')
       if (date < '2026-09-24' || date > '2026-09-25') throw new Error('Personal-cup campaign is not active')
     } else if (discountUnitPrice !== 0 || campaignId) throw new Error('Invalid discount')
-    if (input.type === 'STAFF_REWARD' && (unitPrice !== 0 || rmbUnitPrice !== 0)) throw new Error('Reward items must be free')
+    if (free && (unitPrice !== 0 || rmbUnitPrice !== 0)) throw new Error(input.type === 'WASTE' ? 'Waste items must be free' : 'Reward items must be free')
     if (!free && Math.round(rmbUnitPrice * 100) !== Math.round((unitPrice - 2) * 100)) throw new Error('RMB price must be MOP price minus 2')
     const temperature = String(item.temperature || '')
     if (!TEMPERATURES.has(temperature)) throw new Error('Invalid temperature')
-    return { productId: String(item.productId), name: String(item.name), temperature, cupType, quantity, baseUnitPrice, discountUnitPrice, campaignId, unitPrice, rmbUnitPrice: input.type === 'STAFF_REWARD' ? null : rmbUnitPrice, lineTotal: unitPrice * quantity }
+    return { productId: String(item.productId), name: String(item.name), temperature, cupType, quantity, baseUnitPrice, discountUnitPrice, campaignId, unitPrice, rmbUnitPrice: free ? null : rmbUnitPrice, lineTotal: unitPrice * quantity }
   })
   const total = Number(input.total)
   const paymentMethod = String(input.paymentMethod || '')
