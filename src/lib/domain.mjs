@@ -49,6 +49,11 @@ export function calculateCartTotal(cart, mode, now = new Date()) {
   return cart.reduce((sum, line) => sum + getUnitPrice(line.product, mode, line.cupType, now) * line.quantity, 0)
 }
 
+export function calculateCartRmbTotal(cart, mode, now = new Date()) {
+  if (mode === 'WASTE' || mode === 'STAFF_REWARD') return 0
+  return cart.reduce((cents, line) => cents + Math.round(getRmbUnitPrice(getUnitPrice(line.product, mode, line.cupType, now)) * 100) * line.quantity, 0) / 100
+}
+
 export function addProduct(cart, product, temperature = 'ICED', cupType) {
   const normalizedTemperature = normalizeTemperature(temperature)
   const normalizedCupType = normalizeCupType(cupType)

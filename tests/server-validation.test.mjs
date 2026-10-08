@@ -13,7 +13,16 @@ test('validateTransactionInput accepts a normal paid sale', () => {
 })
 
 test('validateTransactionInput rejects a paid waste record', () => {
-  assert.throws(() => validateTransactionInput({ ...sale, type: 'WASTE', total: 0, paymentMethod: '', wasteReason: '' }), /waste reason/i)
+  assert.throws(() => validateTransactionInput({ ...sale, type: 'WASTE', total: 0, paymentMethod: '', wasteReason: '', items: [{ ...sale.items[0], unitPrice: 0, rmbUnitPrice: null, lineTotal: 0 }] }), /waste reason/i)
+})
+
+test('validateTransactionInput preserves a null RMB price for waste', () => {
+  const waste = {
+    ...sale,
+    type: 'WASTE', total: 0, paymentMethod: '', wasteReason: 'SPILLED',
+    items: [{ ...sale.items[0], unitPrice: 0, rmbUnitPrice: null, lineTotal: 0 }],
+  }
+  assert.equal(validateTransactionInput(waste).items[0].rmbUnitPrice, null)
 })
 
 test('validateTransactionInput enforces the fixed RMB minus-two rule', () => {

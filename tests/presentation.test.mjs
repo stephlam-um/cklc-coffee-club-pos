@@ -9,7 +9,7 @@ test('formatMop presents POS totals as Macau patacas with two decimals', () => {
 
 test('paymentActionLabel names the amount and payment method', () => {
   assert.equal(paymentActionLabel(75, 'MPay'), 'Pay MOP\u00a075.00 with MPay')
-  assert.equal(paymentActionLabel(75, 'WeChat Pay'), 'Pay MOP\u00a075.00 with WeChat Pay')
+  assert.equal(paymentActionLabel(75, 'WeChat Pay'), 'Pay RMB\u00a075.00 with WeChat Pay')
 })
 
 test('formatTemperature gives drink choices a readable label', () => {

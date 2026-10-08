@@ -1,3 +1,5 @@
+import { getRmbUnitPrice } from './domain.mjs'
+
 const mopFormatter = new Intl.NumberFormat('en-MO', {
   style: 'currency',
   currency: 'MOP',
@@ -10,8 +12,17 @@ export function formatMop(value) {
   return mopFormatter.format(Number(value) || 0)
 }
 
+export function formatRmb(value) {
+  return `RMB\u00a0${new Intl.NumberFormat('en-MO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0)}`
+}
+
+export function orderRmbTotal(order) {
+  if (order.type === 'WASTE' || order.type === 'STAFF_REWARD') return 0
+  return (order.items || []).reduce((cents, item) => cents + Math.round((item.rmbUnitPrice ?? getRmbUnitPrice(item.unitPrice)) * 100) * item.quantity, 0) / 100
+}
+
 export function paymentActionLabel(total, method) {
-  return `Pay ${formatMop(total)} with ${method}`
+  return `Pay ${method === 'WeChat Pay' ? formatRmb(total) : formatMop(total)} with ${method}`
 }
 
 export function formatTemperature(value) {

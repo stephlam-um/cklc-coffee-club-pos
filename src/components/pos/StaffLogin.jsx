@@ -1,28 +1,25 @@
-import { getInitials, possessiveName } from '@/lib/presentation.mjs'
+import { getInitials } from '@/lib/presentation.mjs'
 
 export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrapError, submitting, onSelect, onPinChange, onCancel, onRetry, onSubmit }) {
   return (
     <main className="login-shell" id="main-content">
       <section className="login-card" aria-labelledby="login-title">
-        <div className="brand-lockup">
+        <div className="brand-lockup" inert={Boolean(selectedStaff)}>
           <div className="brand-mark" aria-hidden="true"><span>CK</span></div>
           <div>
-            <p className="eyebrow">CKLC Coffee · Campus Counter</p>
-            <h1 id="login-title">Who’s Working?</h1>
-            <p className="lede">Choose your name to open today’s counter shift.</p>
+            <p className="login-brand">CKLC Coffee POS</p>
+            <h1 id="login-title">Select staff</h1>
           </div>
         </div>
 
-        <div className="shift-ready"><span className="status-dot" aria-hidden="true" />Ready to Open a Shift</div>
-
         {bootstrapError && (
           <div className="bootstrap-error" role="alert">
-            <div><strong>Couldn’t Load the Counter</strong><span>{bootstrapError}</span></div>
+            <div><strong>Unable to load staff</strong><span>{bootstrapError}</span></div>
             <button className="button secondary compact" type="button" onClick={onRetry} disabled={submitting}>Try Again</button>
           </div>
         )}
 
-        {!bootstrapError && <div className="staff-grid" aria-label="Active staff">
+        {!bootstrapError && <div className="staff-grid" aria-label="Active staff" inert={Boolean(selectedStaff)}>
           {staff.map(member => (
             <button
               className="staff-button"
@@ -33,22 +30,30 @@ export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrap
             >
               <span className="staff-avatar" aria-hidden="true">{getInitials(member.name)}</span>
               <span>{member.name}</span>
-              <small>Start Shift</small>
             </button>
           ))}
         </div>}
 
-        {!bootstrapError && !staff.length && <div className="empty-state">No active staff found. Add staff in the Google Sheet, then refresh this page.</div>}
+        {!bootstrapError && !staff.length && <div className="empty-state">No active staff.</div>}
 
         {selectedStaff && (
-          <form className="pin-sheet" onSubmit={onSubmit}>
+          <div className="login-pin-overlay" role="dialog" aria-modal="true" aria-labelledby="pin-staff-name">
+          <form className="pin-sheet" onSubmit={onSubmit} onKeyDown={event => {
+            if (event.key === 'Escape' && !submitting) onCancel()
+            if (event.key !== 'Tab') return
+            const fields = [...event.currentTarget.querySelectorAll('input, button:not([disabled])')]
+            const first = fields[0]
+            const last = fields.at(-1)
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+            if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+          }}>
             <div>
-              <p className="eyebrow">Secure Sign-In</p>
-              <h2>Enter {possessiveName(selectedStaff.name)} PIN</h2>
+              <h2 id="pin-staff-name">{selectedStaff.name}</h2>
             </div>
             <label className="field-label" htmlFor="staff-pin">4-Digit PIN</label>
             <input
               id="staff-pin"
+              autoFocus
               name="pin"
               type="password"
               inputMode="numeric"
@@ -63,12 +68,13 @@ export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrap
             />
             {error && <p className="field-error" id="login-error" role="alert">{error}</p>}
             <div className="row actions-row">
-              <button className="button secondary" type="button" onClick={onCancel}>Choose Another Person</button>
+              <button className="button secondary" type="button" onClick={onCancel}>Back</button>
               <button className="button primary" type="submit" disabled={pin.length !== 4 || submitting}>
                 {submitting ? 'Opening Shift…' : 'Open Shift'}
               </button>
             </div>
           </form>
+          </div>
         )}
       </section>
     </main>

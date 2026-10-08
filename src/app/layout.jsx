@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'CKLC Coffee · Campus Counter',
-  description: 'Fast, friendly point of sale for CKLC Coffee.',
+  title: 'CKLC Coffee POS',
+  description: 'CKLC Coffee point of sale.',
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg', apple: '/icon.svg' },
 }

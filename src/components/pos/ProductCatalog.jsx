@@ -1,5 +1,5 @@
-import { formatMop } from '@/lib/presentation.mjs'
-import { DRINK_TEMPERATURES, getUnitPrice } from '@/lib/domain.mjs'
+import { formatMop, formatRmb } from '@/lib/presentation.mjs'
+import { DRINK_TEMPERATURES, getRmbUnitPrice, getUnitPrice } from '@/lib/domain.mjs'
 
 const TEMPERATURE_LABELS = { HOT: 'Hot', ICED: 'Iced' }
 
@@ -32,7 +32,7 @@ export default function ProductCatalog({ products, mode, cupType = 'DINE_IN', on
               <span className="product-name">{product.name}</span>
               <div className="product-footer">
                 <span className="product-price">
-                  {mode === 'WASTE' ? 'Log Item' : mode === 'STAFF_REWARD' ? 'Free Drink' : formatMop(getUnitPrice(product, mode, cupType))}
+                  {mode === 'WASTE' ? 'Log Item' : mode === 'STAFF_REWARD' ? 'Free Drink' : <><span>{formatMop(getUnitPrice(product, mode, cupType))}</span><span>{formatRmb(getRmbUnitPrice(getUnitPrice(product, mode, cupType)))}</span></>}
                 </span>
                 <div className="temperature-actions" aria-label={`Choose Hot or Iced for ${product.name}`}>
                   {DRINK_TEMPERATURES.map(temperature => (

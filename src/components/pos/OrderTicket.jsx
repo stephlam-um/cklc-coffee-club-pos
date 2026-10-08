@@ -1,8 +1,10 @@
-import { formatMop, formatTemperature, paymentActionLabel } from '@/lib/presentation.mjs'
-import { getUnitPrice, normalizeCupType } from '@/lib/domain.mjs'
+import { formatMop, formatRmb, formatTemperature } from '@/lib/presentation.mjs'
+import { calculateCartRmbTotal, getRmbUnitPrice, getUnitPrice, normalizeCupType } from '@/lib/domain.mjs'
 
 export default function OrderTicket({ cart, mode, total, submitting, pending = false, online = true, rewardAvailable = 0, onChangeQuantity, onClear, onCheckout }) {
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0)
+  const paid = mode === 'NORMAL_SALE' || mode === 'STAFF'
+  const rmbTotal = calculateCartRmbTotal(cart, mode)
 
   return (
     <aside className="order-ticket" id="order-ticket" aria-labelledby="order-title">
@@ -27,7 +29,8 @@ export default function OrderTicket({ cart, mode, total, submitting, pending = f
             <div className="cart-line" key={`${line.product.id}-${line.temperature}-${cupType}`}>
               <div className="line-copy">
                 <strong>{line.product.name}</strong>
-                <small>{[formatTemperature(line.temperature), mode === 'NORMAL_SALE' ? (cupType === 'PERSONAL_CUP' ? 'Personal Cup · $3 Off' : 'Dine In') : '', mode === 'WASTE' ? line.product.category : `${formatMop(unitPrice)} Each`].filter(Boolean).join(' · ')}</small>
+                <small>{[formatTemperature(line.temperature), mode === 'NORMAL_SALE' ? (cupType === 'PERSONAL_CUP' ? 'Personal Cup' : 'Dine In') : '', mode === 'WASTE' ? line.product.category : ''].filter(Boolean).join(' · ')}</small>
+                {paid && <div className="item-prices" aria-label="Unit prices"><span>{formatMop(unitPrice)}</span><span>{formatRmb(getRmbUnitPrice(unitPrice))}</span></div>}
               </div>
               <div className="qty" aria-label={`Quantity for ${formatTemperature(line.temperature)} ${line.product.name}`}>
                 <button type="button" disabled={pending || submitting} aria-label={`Remove one ${formatTemperature(line.temperature)} ${line.product.name}`} onClick={() => onChangeQuantity(line.product.id, line.temperature, -1, cupType)}>−</button>
@@ -46,7 +49,7 @@ export default function OrderTicket({ cart, mode, total, submitting, pending = f
       </div>
 
       <div className="checkout">
-        <div className="total"><span>Total</span><strong>{formatMop(total)}</strong></div>
+        {paid ? <div className="currency-totals" aria-label="Order totals" aria-live="polite"><div><span>MOP total</span><strong>{formatMop(total)}</strong></div><div><span>RMB total</span><strong>{formatRmb(rmbTotal)}</strong></div></div> : <div className="total"><span>Total</span><strong>{formatMop(total)}</strong></div>}
         {mode === 'STAFF_REWARD' ? (
           <button className="button primary full-width" type="button" disabled={!cart.length || submitting || !online || (!pending && itemCount > rewardAvailable)} onClick={() => onCheckout()}>
             {submitting ? 'Redeeming…' : pending ? 'Confirm Redemption' : `Redeem ${itemCount} Free Drink${itemCount === 1 ? '' : 's'}`}
@@ -58,10 +61,10 @@ export default function OrderTicket({ cart, mode, total, submitting, pending = f
         ) : (
           <div className="payments">
             <button type="button" disabled={!cart.length || submitting || !online} onClick={() => onCheckout('MPAY')}>
-              <span>MPay</span><small>{submitting ? 'Recording…' : paymentActionLabel(total, 'MPay')}</small>
+              <span>{submitting ? 'Recording…' : 'Pay with MPay'}</span>
             </button>
             <button type="button" disabled={!cart.length || submitting || !online} onClick={() => onCheckout('WECHAT_PAY')}>
-              <span>WeChat Pay</span><small>{submitting ? 'Recording…' : paymentActionLabel(total, 'WeChat Pay')}</small>
+              <span>{submitting ? 'Recording…' : 'Pay with WeChat'}</span>
             </button>
           </div>
         )}
