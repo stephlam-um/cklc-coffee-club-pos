@@ -15,6 +15,7 @@ export function normalizeDashboardOrder(row = {}) {
     campaignId: String(item.campaignId || ''),
     quantity: Number(item.quantity || 0),
     unitPrice: Number(item.unitPrice || 0),
+    rmbUnitPrice: item.rmbUnitPrice == null ? null : Number(item.rmbUnitPrice),
     lineTotal: Number(item.lineTotal || 0),
   })) : []
 
