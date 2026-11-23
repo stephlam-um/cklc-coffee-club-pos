@@ -16,6 +16,21 @@ export function formatRmb(value) {
   return `RMB\u00a0${new Intl.NumberFormat('en-MO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0)}`
 }
 
+const orderDateTime = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Macau',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+export function formatOrderDateTime(timestamp) {
+  const time = Date.parse(timestamp)
+  return Number.isFinite(time) ? orderDateTime.format(time) : 'Unknown date and time'
+}
+
 export function orderRmbTotal(order) {
   if (order.type === 'WASTE' || order.type === 'STAFF_REWARD') return 0
   return (order.items || []).reduce((cents, item) => cents + Math.round((item.rmbUnitPrice ?? getRmbUnitPrice(item.unitPrice)) * 100) * item.quantity, 0) / 100

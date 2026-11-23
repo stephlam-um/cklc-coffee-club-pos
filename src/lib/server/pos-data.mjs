@@ -3,15 +3,17 @@ import { verifyPin } from './hash.mjs'
 import { dashboardStats, normalizeDashboardOrder } from '../dashboard.mjs'
 
 export async function getBootstrap(supabase) {
-  const [products, staff] = await Promise.all([
+  const [products, staff, discount] = await Promise.all([
     supabase.from('products').select('id,name,category,price,staff_price,active,sort_order').eq('active', true).order('sort_order'),
     supabase.from('staff').select('id,name,role,active').eq('active', true).order('name'),
+    supabase.rpc('create_discounted_transaction', { p_transaction: null, p_items: null }),
   ])
   if (products.error) throw products.error
   if (staff.error) throw staff.error
   return {
     products: (products.data || []).map(row => ({ id: row.id, name: row.name, category: row.category, price: Number(row.price), staffPrice: Number(row.staff_price), active: row.active, sortOrder: Number(row.sort_order) })),
     staff: staff.data || [],
+    discountAvailable: discount.data?.available === true,
   }
 }
 
@@ -74,13 +76,32 @@ function toDashboardOrder(row) {
     items: (row.transaction_items || []).map(item => ({ productId: item.product_id, name: item.product_name, temperature: item.temperature, cupType: item.cup_type || 'DINE_IN', quantity: item.quantity, baseUnitPrice: Number(item.base_unit_price ?? item.unit_price), discountUnitPrice: Number(item.discount_unit_price || 0), campaignId: item.campaign_id || '', unitPrice: Number(item.unit_price), rmbUnitPrice: item.rmb_unit_price == null ? null : Number(item.rmb_unit_price), lineTotal: Number(item.line_total) })),
     total: Number(row.total), paymentMethod: row.payment_method, wasteReason: row.waste_reason,
     fulfillmentStatus: row.fulfillment_status, completedAt: row.completed_at, completedBy: row.completed_by,
+    reminderUntil: row.reminder_until, needsReview: Boolean(row.review_requested_at),
   })
 }
 
 export async function getAllPendingOrders(supabase) {
-  const { data, error } = await supabase.from('transactions').select('id,created_at,shift_id,staff_id,type,total,payment_method,waste_reason,fulfillment_status,completed_at,completed_by,staff:staff_id(name),transaction_items(*)').eq('status', 'COMPLETED').eq('fulfillment_status', 'PENDING').neq('type', 'WASTE').order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('transactions').select('*,staff:staff_id(name),transaction_items(*)').eq('status', 'COMPLETED').eq('fulfillment_status', 'PENDING').neq('type', 'WASTE').order('created_at', { ascending: true }).order('id')
   if (error) throw error
-  return { orders: (data || []).map(toDashboardOrder), syncedAt: new Date().toISOString() }
+  return {
+    orders: (data || []).map(toDashboardOrder),
+    remindersEnabled: (data || []).every(row => Object.hasOwn(row, 'review_requested_at')),
+    syncedAt: new Date().toISOString(),
+  }
+}
+
+export async function deferPendingOrder(supabase, { transactionId, decision }, staffId) {
+  if (typeof transactionId !== 'string' || !transactionId || !['PREPARING', 'REVIEW'].includes(decision)) throw new Error('Invalid reminder decision')
+  const now = Date.now()
+  const fields = decision === 'PREPARING'
+    ? { reminder_until: new Date(now + 300000).toISOString() }
+    : { review_requested_at: new Date(now).toISOString(), review_requested_by: staffId }
+  const { data, error } = await supabase.from('transactions').update(fields)
+    .eq('id', transactionId).eq('status', 'COMPLETED').eq('fulfillment_status', 'PENDING')
+    .neq('type', 'WASTE').is('review_requested_at', null)
+    .select('reminder_until,review_requested_at').maybeSingle()
+  if (error) throw error
+  return data ? { reminderUntil: data.reminder_until, needsReview: Boolean(data.review_requested_at) } : null
 }
 
 export async function deletePendingOrder(supabase, transactionId) {
@@ -90,8 +111,9 @@ export async function deletePendingOrder(supabase, transactionId) {
   return { transactionId: result.data.id }
 }
 
-export async function closeShift(supabase, { shiftId, staffId, mpayActual, wechatActual, note }) {
-  const result = await supabase.rpc('close_shift', { p_shift_id: shiftId, p_staff_id: staffId, p_mpay_actual: mpayActual, p_wechat_actual: wechatActual, p_note: note || '' })
+export async function closeShift(supabase, { shiftId, staffId, mpayActual, wechatActual, wechatCurrency, note }) {
+  const procedure = wechatCurrency === 'RMB' ? 'close_shift_in_payment_currencies' : 'close_shift'
+  const result = await supabase.rpc(procedure, { p_shift_id: shiftId, p_staff_id: staffId, p_mpay_actual: mpayActual, p_wechat_actual: wechatActual, p_note: note || '' })
   if (result.error) throw result.error
   return result.data
 }

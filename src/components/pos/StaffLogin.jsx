@@ -1,25 +1,29 @@
 import { getInitials } from '@/lib/presentation.mjs'
 
+import { useLanguage, LanguageToggle } from '@/components/pos/LanguageProvider'
+
 export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrapError, submitting, onSelect, onPinChange, onCancel, onRetry, onSubmit }) {
+  const { t, language } = useLanguage()
   return (
     <main className="login-shell" id="main-content">
+      <LanguageToggle className="login-language-toggle" />
       <section className="login-card" aria-labelledby="login-title">
         <div className="brand-lockup" inert={Boolean(selectedStaff)}>
           <div className="brand-mark" aria-hidden="true"><span>CK</span></div>
           <div>
             <p className="login-brand">CKLC Coffee POS</p>
-            <h1 id="login-title">Select staff</h1>
+            <h1 id="login-title">{t("Select staff")}</h1>
           </div>
         </div>
 
         {bootstrapError && (
           <div className="bootstrap-error" role="alert">
-            <div><strong>Unable to load staff</strong><span>{bootstrapError}</span></div>
-            <button className="button secondary compact" type="button" onClick={onRetry} disabled={submitting}>Try Again</button>
+            <div><strong>{t("Unable to load staff")}</strong><span>{bootstrapError}</span></div>
+            <button className="button secondary compact" type="button" onClick={onRetry} disabled={submitting}>{t("Try Again")}</button>
           </div>
         )}
 
-        {!bootstrapError && <div className="staff-grid" aria-label="Active staff" inert={Boolean(selectedStaff)}>
+        {!bootstrapError && <div className="staff-grid" aria-label={t("Active staff")} inert={Boolean(selectedStaff)}>
           {staff.map(member => (
             <button
               className="staff-button"
@@ -34,7 +38,7 @@ export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrap
           ))}
         </div>}
 
-        {!bootstrapError && !staff.length && <div className="empty-state">No active staff.</div>}
+        {!bootstrapError && !staff.length && <div className="empty-state">{t("No active staff.")}</div>}
 
         {selectedStaff && (
           <div className="login-pin-overlay" role="dialog" aria-modal="true" aria-labelledby="pin-staff-name">
@@ -50,7 +54,7 @@ export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrap
             <div>
               <h2 id="pin-staff-name">{selectedStaff.name}</h2>
             </div>
-            <label className="field-label" htmlFor="staff-pin">4-Digit PIN</label>
+            <label className="field-label" htmlFor="staff-pin">{t("4-Digit PIN")}</label>
             <input
               id="staff-pin"
               autoFocus
@@ -68,9 +72,9 @@ export default function StaffLogin({ staff, selectedStaff, pin, error, bootstrap
             />
             {error && <p className="field-error" id="login-error" role="alert">{error}</p>}
             <div className="row actions-row">
-              <button className="button secondary" type="button" onClick={onCancel}>Back</button>
+              <button className="button secondary" type="button" onClick={onCancel}>{t("Back")}</button>
               <button className="button primary" type="submit" disabled={pin.length !== 4 || submitting}>
-                {submitting ? 'Opening Shift…' : 'Open Shift'}
+                {submitting ? t("Opening Shift…") : t("Open Shift")}
               </button>
             </div>
           </form>

@@ -1,5 +1,13 @@
 export const FULFILLMENT_STATUS = Object.freeze(['PENDING', 'COMPLETED'])
 
+export function overduePendingOrders(orders, now) {
+  const time = new Date(now).getTime()
+  return orders.filter(order => order.type !== 'WASTE' && order.fulfillmentStatus === 'PENDING' &&
+    order.timestamp && Date.parse(order.timestamp) <= time - 600000 &&
+    !(Date.parse(order.reminderUntil) > time) && !order.needsReview)
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
+}
+
 export function buildOrderStatusPayload(transactionId, fulfillmentStatus, staffId) {
   return { transactionId, fulfillmentStatus, staffId }
 }
@@ -32,6 +40,8 @@ export function normalizeDashboardOrder(row = {}) {
     fulfillmentStatus: FULFILLMENT_STATUS.includes(row.fulfillmentStatus) ? row.fulfillmentStatus : 'PENDING',
     completedAt: row.completedAt || '',
     completedBy: String(row.completedBy || ''),
+    reminderUntil: row.reminderUntil || '',
+    needsReview: Boolean(row.needsReview),
   }
 }
 

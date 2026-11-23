@@ -10,34 +10,37 @@ const MODE_COPY = {
   WASTE: { eyebrow: 'Waste Log', title: 'What Was Wasted?', hint: 'Choose Hot or Iced, then log the item.' },
 }
 
+import { useLanguage } from '@/components/pos/LanguageProvider'
+
 export default function ProductCatalog({ products, mode, cupType = 'DINE_IN', onAdd, disabled = false }) {
+  const { t, language } = useLanguage()
   const copy = MODE_COPY[mode]
 
   return (
     <section className="catalog" aria-labelledby="catalog-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">{copy.eyebrow}</p>
-          <h2 id="catalog-title">{copy.title}</h2>
-          <p>{copy.hint}</p>
+          <p className="eyebrow">{t(copy.eyebrow)}</p>
+          <h2 id="catalog-title">{t(copy.title)}</h2>
+          <p>{t(copy.hint)}</p>
         </div>
-        <span className="menu-count">{products.length} Items</span>
+        <span className="menu-count">{products.length} {t('Items')}</span>
       </div>
 
       {products.length ? (
         <div className="product-grid">
           {products.map(product => (
             <div className="product-button" key={product.id}>
-              <span className="product-category">{product.category}</span>
-              <span className="product-name">{product.name}</span>
+              <span className="product-category">{t(product.category)}</span>
+              <span className="product-name">{t(product.name)}</span>
               <div className="product-footer">
                 <span className="product-price">
-                  {mode === 'WASTE' ? 'Log Item' : mode === 'STAFF_REWARD' ? 'Free Drink' : <><span>{formatMop(getUnitPrice(product, mode, cupType))}</span><span>{formatRmb(getRmbUnitPrice(getUnitPrice(product, mode, cupType)))}</span></>}
+                  {mode === 'WASTE' ? t("Log Item") : mode === 'STAFF_REWARD' ? t("Free Drink") : <><span>{formatMop(getUnitPrice(product, mode, cupType))}</span><span>{formatRmb(getRmbUnitPrice(getUnitPrice(product, mode, cupType)))}</span></>}
                 </span>
-                <div className="temperature-actions" aria-label={`Choose Hot or Iced for ${product.name}`}>
+                <div className="temperature-actions" aria-label={`Choose Hot or Iced for ${t(product.name)}`}>
                   {DRINK_TEMPERATURES.map(temperature => (
-                    <button className="temperature-button" key={temperature} type="button" disabled={disabled} aria-label={`${TEMPERATURE_LABELS[temperature]} ${product.name}`} onClick={() => onAdd(product, temperature, cupType)}>
-                      {TEMPERATURE_LABELS[temperature]}
+                    <button className="temperature-button" key={temperature} type="button" disabled={disabled} aria-label={`${t(TEMPERATURE_LABELS[temperature])} ${t(product.name)}`} onClick={() => onAdd(product, temperature, cupType)}>
+                      {t(TEMPERATURE_LABELS[temperature])}
                     </button>
                   ))}
                 </div>
@@ -46,7 +49,7 @@ export default function ProductCatalog({ products, mode, cupType = 'DINE_IN', on
           ))}
         </div>
       ) : (
-        <div className="empty-state">No active products found. Add products in the Google Sheet, then refresh this page.</div>
+        <div className="empty-state">{t("No active products found. Add products in the Google Sheet, then refresh this page.")}</div>
       )}
     </section>
   )

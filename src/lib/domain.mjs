@@ -9,6 +9,17 @@ export const DRINK_TEMPERATURES = Object.freeze(['HOT', 'ICED'])
 export const CUP_TYPES = Object.freeze(['DINE_IN', 'PERSONAL_CUP'])
 export const PERSONAL_CUP_CAMPAIGN_ID = 'PERSONAL_CUP_2026'
 export const PERSONAL_CUP_DISCOUNT = 3
+export const EIGHTY_PERCENT_CAMPAIGN_ID = 'EIGHTY_PERCENT'
+
+export function getEightyPercentPrices(price) {
+  const baseCents = Math.round(Number(price) * 100)
+  const mopCents = Math.round(baseCents * 0.8)
+  return {
+    unitPrice: mopCents / 100,
+    rmbUnitPrice: Math.round((baseCents - 200) * 0.8) / 100,
+    discountUnitPrice: (baseCents - mopCents) / 100,
+  }
+}
 
 export function normalizeCupType(cupType) {
   return CUP_TYPES.includes(cupType) ? cupType : 'DINE_IN'
@@ -45,11 +56,13 @@ export function getRmbUnitPrice(mopUnitPrice) {
   return (mopCents - 200) / 100
 }
 
-export function calculateCartTotal(cart, mode, now = new Date()) {
+export function calculateCartTotal(cart, mode, now = new Date(), discount = false) {
+  if (discount) return cart.reduce((cents, line) => cents + Math.round(getEightyPercentPrices(line.product.price).unitPrice * 100) * line.quantity, 0) / 100
   return cart.reduce((sum, line) => sum + getUnitPrice(line.product, mode, line.cupType, now) * line.quantity, 0)
 }
 
-export function calculateCartRmbTotal(cart, mode, now = new Date()) {
+export function calculateCartRmbTotal(cart, mode, now = new Date(), discount = false) {
+  if (discount) return cart.reduce((cents, line) => cents + Math.round(getEightyPercentPrices(line.product.price).rmbUnitPrice * 100) * line.quantity, 0) / 100
   if (mode === 'WASTE' || mode === 'STAFF_REWARD') return 0
   return cart.reduce((cents, line) => cents + Math.round(getRmbUnitPrice(getUnitPrice(line.product, mode, line.cupType, now)) * 100) * line.quantity, 0) / 100
 }

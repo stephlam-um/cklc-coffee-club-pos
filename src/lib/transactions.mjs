@@ -1,23 +1,26 @@
-import { calculateCartTotal, getRmbUnitPrice, getUnitPrice, normalizeCupType, normalizeTemperature, isPersonalCupCampaignActive, isRewardEligible, PERSONAL_CUP_CAMPAIGN_ID, PERSONAL_CUP_DISCOUNT } from './domain.mjs'
+import { calculateCartTotal, getEightyPercentPrices, getRmbUnitPrice, getUnitPrice, normalizeCupType, normalizeTemperature, isPersonalCupCampaignActive, isRewardEligible, EIGHTY_PERCENT_CAMPAIGN_ID, PERSONAL_CUP_CAMPAIGN_ID, PERSONAL_CUP_DISCOUNT } from './domain.mjs'
 
 const PENDING_TRANSACTION_PREFIX = 'pos.pending-transaction:v1:'
 
-export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paymentMethod = '', wasteReason = '', now = new Date() }) {
+export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paymentMethod = '', wasteReason = '', now = new Date(), discount = false }) {
+  if (discount && (mode !== 'NORMAL_SALE' || cart.some(line => normalizeCupType(line.cupType) === 'PERSONAL_CUP'))) throw new Error('8折 applies to regular sales without another discount')
   const free = mode === 'WASTE' || mode === 'STAFF_REWARD'
   if (mode === 'STAFF_REWARD' && cart.some(line => !isRewardEligible(line.product))) throw new Error('XXL drinks cannot be redeemed')
   const items = cart.map(({ product, temperature, cupType: rawCupType, quantity }) => {
     const cupType = normalizeCupType(rawCupType)
     const personalCup = mode === 'NORMAL_SALE' && cupType === 'PERSONAL_CUP' && isPersonalCupCampaignActive(now)
-    const unitPrice = getUnitPrice(product, mode, cupType, now)
+    const discounted = discount ? getEightyPercentPrices(product.price) : null
+    const unitPrice = discounted?.unitPrice ?? getUnitPrice(product, mode, cupType, now)
     return {
       productId: product.id,
       name: product.name,
       temperature: normalizeTemperature(temperature),
       quantity,
       ...(personalCup ? { cupType, baseUnitPrice: Number(product.price), discountUnitPrice: PERSONAL_CUP_DISCOUNT, campaignId: PERSONAL_CUP_CAMPAIGN_ID } : {}),
+      ...(discounted ? { baseUnitPrice: Number(product.price), discountUnitPrice: discounted.discountUnitPrice, campaignId: EIGHTY_PERCENT_CAMPAIGN_ID } : {}),
       unitPrice,
-      rmbUnitPrice: free ? null : getRmbUnitPrice(unitPrice),
-      lineTotal: unitPrice * quantity,
+      rmbUnitPrice: free ? null : discounted?.rmbUnitPrice ?? getRmbUnitPrice(unitPrice),
+      lineTotal: discounted ? Math.round(unitPrice * 100) * quantity / 100 : unitPrice * quantity,
     }
   })
   return {
@@ -26,7 +29,7 @@ export function buildTransactionPayload({ id, shiftId, staffId, mode, cart, paym
     staffId,
     type: mode,
     items,
-    total: mode === 'WASTE' ? 0 : calculateCartTotal(cart, mode, now),
+    total: mode === 'WASTE' ? 0 : calculateCartTotal(cart, mode, now, discount),
     paymentMethod: free ? '' : paymentMethod,
     wasteReason: mode === 'WASTE' ? wasteReason : '',
   }

@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-export default function CloseShiftDialog({ actual, submitting, error, onChange, onCancel, onSubmit }) {
+import { useLanguage } from '@/components/pos/LanguageProvider'
+
+export default function CloseShiftDialog({ actual, submitting, error, wechatCurrency = 'MOP', onChange, onCancel, onSubmit }) {
+  const { t, language } = useLanguage()
   const dialogRef = useRef(null)
   const firstFieldRef = useRef(null)
   const previousFocusRef = useRef(null)
@@ -27,11 +30,11 @@ export default function CloseShiftDialog({ actual, submitting, error, onChange, 
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="close-shift-title" ref={dialogRef}>
         <div className="modal-heading">
           <div>
-            <p className="eyebrow">End of Day</p>
-            <h2 id="close-shift-title">Close This Shift?</h2>
-            <p>Enter the totals shown in each payment app. You can add a note for any difference.</p>
+            <p className="eyebrow">{t("End of Day")}</p>
+            <h2 id="close-shift-title">{t("Close This Shift?")}</h2>
+            <p>{t("Enter the totals shown in each payment app. You can add a note for any difference.")}</p>
           </div>
-          <button className="icon-button" type="button" aria-label="Cancel closing shift" onClick={onCancel} disabled={submitting}>×</button>
+          <button className="icon-button" type="button" aria-label={t("Cancel closing shift")} onClick={onCancel} disabled={submitting}>×</button>
         </div>
 
         <form onSubmit={onSubmit} className="shift-form">
@@ -39,17 +42,17 @@ export default function CloseShiftDialog({ actual, submitting, error, onChange, 
             <label htmlFor="mpay-actual">MPay Actual
               <span className="money-field"><span>MOP</span><input ref={firstFieldRef} id="mpay-actual" name="mpayActual" inputMode="decimal" pattern="\d+(\.\d{1,2})?" autoComplete="off" value={actual.mpay} onChange={event => onChange({ ...actual, mpay: event.target.value })} placeholder="0.00" /></span>
             </label>
-            <label htmlFor="wechat-actual">WeChat Pay Actual
-              <span className="money-field"><span>MOP</span><input id="wechat-actual" name="wechatActual" inputMode="decimal" pattern="\d+(\.\d{1,2})?" autoComplete="off" value={actual.wechat} onChange={event => onChange({ ...actual, wechat: event.target.value })} placeholder="0.00" /></span>
+            <label htmlFor="wechat-actual">{t("WeChat Pay Actual")}
+              <span className="money-field"><span>{wechatCurrency}</span><input id="wechat-actual" name="wechatActual" inputMode="decimal" pattern="\d+(\.\d{1,2})?" autoComplete="off" value={actual.wechat} onChange={event => onChange({ ...actual, wechat: event.target.value })} placeholder="0.00" /></span>
             </label>
           </div>
-          <label htmlFor="shift-note">Shift Note <small>Optional</small>
-            <textarea id="shift-note" name="shiftNote" autoComplete="off" value={actual.note} onChange={event => onChange({ ...actual, note: event.target.value })} placeholder="Add a note about this shift…" />
+          <label htmlFor="shift-note">{t("Shift Note")} <small>{t("Optional")}</small>
+            <textarea id="shift-note" name="shiftNote" autoComplete="off" value={actual.note} onChange={event => onChange({ ...actual, note: event.target.value })} placeholder={t("Add a note about this shift…")} />
           </label>
           {error && <p className="field-error" role="alert">{error}</p>}
           <div className="row actions-row">
-            <button className="button secondary" type="button" onClick={onCancel} disabled={submitting}>Keep Shift Open</button>
-            <button className="button danger" type="submit" disabled={submitting}>{submitting ? 'Closing Shift…' : 'Close Shift'}</button>
+            <button className="button secondary" type="button" onClick={onCancel} disabled={submitting}>{t("Keep Shift Open")}</button>
+            <button className="button danger" type="submit" disabled={submitting}>{submitting ? t("Closing Shift…") : t("Close Shift")}</button>
           </div>
         </form>
       </section>

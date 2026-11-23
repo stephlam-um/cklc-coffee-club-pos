@@ -1,4 +1,5 @@
 import { fingerprintTransaction } from './hash.mjs'
+import { EIGHTY_PERCENT_CAMPAIGN_ID, getEightyPercentPrices } from '../domain.mjs'
 
 const TYPES = new Set(['NORMAL_SALE', 'STAFF', 'STAFF_REWARD', 'WASTE'])
 const PAYMENTS = new Set(['MPAY', 'WECHAT_PAY'])
@@ -31,21 +32,31 @@ export function validateTransactionInput(input, now = new Date()) {
     if (!Number.isFinite(rmbUnitPrice) || rmbUnitPrice < 0) throw new Error('Invalid RMB item price')
     if (!CUP_TYPES.has(cupType)) throw new Error('Invalid cup type')
     if (!Number.isFinite(baseUnitPrice) || baseUnitPrice < 0 || !Number.isFinite(discountUnitPrice) || discountUnitPrice < 0) throw new Error('Invalid discount')
-    if (cupType === 'PERSONAL_CUP') {
+    const discounted = campaignId === EIGHTY_PERCENT_CAMPAIGN_ID
+    if (discounted) {
+      const expected = getEightyPercentPrices(baseUnitPrice)
+      if (input.type !== 'NORMAL_SALE' || cupType !== 'DINE_IN' || baseUnitPrice < 2 ||
+        unitPrice !== expected.unitPrice || discountUnitPrice !== expected.discountUnitPrice ||
+        item.rmbUnitPrice == null || rmbUnitPrice !== expected.rmbUnitPrice) throw new Error('Invalid 8折 discount')
+    } else if (cupType === 'PERSONAL_CUP') {
       const date = macauDate(now)
       if (input.type !== 'NORMAL_SALE' || campaignId !== PERSONAL_CUP_CAMPAIGN_ID || discountUnitPrice !== 3 || baseUnitPrice - discountUnitPrice !== unitPrice) throw new Error('Invalid personal-cup discount')
       if (date < '2026-09-24' || date > '2026-09-25') throw new Error('Personal-cup campaign is not active')
     } else if (discountUnitPrice !== 0 || campaignId) throw new Error('Invalid discount')
     if (free && (unitPrice !== 0 || rmbUnitPrice !== 0)) throw new Error(input.type === 'WASTE' ? 'Waste items must be free' : 'Reward items must be free')
-    if (!free && Math.round(rmbUnitPrice * 100) !== Math.round((unitPrice - 2) * 100)) throw new Error('RMB price must be MOP price minus 2')
+    if (!free && !discounted && Math.round(rmbUnitPrice * 100) !== Math.round((unitPrice - 2) * 100)) throw new Error('RMB price must be MOP price minus 2')
     const temperature = String(item.temperature || '')
     if (!TEMPERATURES.has(temperature)) throw new Error('Invalid temperature')
-    return { productId: String(item.productId), name: String(item.name), temperature, cupType, quantity, baseUnitPrice, discountUnitPrice, campaignId, unitPrice, rmbUnitPrice: free ? null : rmbUnitPrice, lineTotal: unitPrice * quantity }
+    const lineTotal = discounted ? Math.round(unitPrice * 100) * quantity / 100 : unitPrice * quantity
+    return { productId: String(item.productId), name: String(item.name), temperature, cupType, quantity, baseUnitPrice, discountUnitPrice, campaignId, unitPrice, rmbUnitPrice: free ? null : rmbUnitPrice, lineTotal }
   })
   const total = Number(input.total)
   const paymentMethod = String(input.paymentMethod || '')
   const wasteReason = String(input.wasteReason || '')
   if (!Number.isFinite(total) || total < 0) throw new Error('Invalid total')
+  if (items.some(item => item.campaignId === EIGHTY_PERCENT_CAMPAIGN_ID) &&
+    (items.some(item => item.campaignId !== EIGHTY_PERCENT_CAMPAIGN_ID) ||
+     total !== items.reduce((cents, item) => cents + Math.round(item.lineTotal * 100), 0) / 100)) throw new Error('Invalid 8折 discount total')
   if (input.type === 'WASTE') {
     if (!WASTE_REASONS.has(wasteReason)) throw new Error('Invalid waste reason')
     if (total !== 0 || paymentMethod) throw new Error('Waste must have zero total and no payment method')

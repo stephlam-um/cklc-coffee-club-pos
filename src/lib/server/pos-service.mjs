@@ -1,5 +1,6 @@
 import { fingerprintTransaction } from './hash.mjs'
 import { validateTransactionInput } from './validation.mjs'
+import { EIGHTY_PERCENT_CAMPAIGN_ID } from '../domain.mjs'
 
 export function idempotencyResult(existing, fingerprint) {
   if (existing.payload_fingerprint !== fingerprint) {
@@ -19,7 +20,9 @@ export async function createOrGetTransaction(supabase, rawInput, actor) {
   if (lookupError) throw lookupError
   if (existing) return idempotencyResult(existing, fingerprint)
 
-  const { data, error } = await supabase.rpc('create_transaction', {
+  const discounted = input.items.some(item => item.campaignId === EIGHTY_PERCENT_CAMPAIGN_ID)
+  if (discounted && String(actor.role).toUpperCase() !== 'MANAGER') throw Object.assign(new Error('Manager access required'), { code: 'FORBIDDEN' })
+  const { data, error } = await supabase.rpc(discounted ? 'create_discounted_transaction' : 'create_transaction', {
     p_transaction: {
       id: input.transactionId, shift_id: input.shiftId, staff_id: input.staffId,
       type: input.type, total: input.total, payment_method: input.paymentMethod,

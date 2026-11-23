@@ -42,7 +42,7 @@ export function createDemoPosApi() {
   }
 
   return {
-    async getBootstrap() { return { products: PRODUCTS.map(product => ({ ...product })), staff: [{ ...STAFF }] } },
+    async getBootstrap() { return { products: PRODUCTS.map(product => ({ ...product })), staff: [{ ...STAFF }], discountAvailable: true } },
     async login(staffId) {
       if (String(staffId) !== STAFF.id) throw new Error('Invalid demo staff')
       return { staff: { ...STAFF } }
@@ -67,7 +67,16 @@ export function createDemoPosApi() {
       return { date: new Date().toISOString().slice(0, 10), timezone: 'Demo', orders, stats: dashboardStats(orders), syncedAt: new Date().toISOString() }
     },
     async getPendingOrders() {
-      return { orders: [...transactions.values()].filter(order => order.fulfillmentStatus === 'PENDING'), syncedAt: new Date().toISOString() }
+      return { orders: [...transactions.values()].filter(order => order.fulfillmentStatus === 'PENDING'), remindersEnabled: true, syncedAt: new Date().toISOString() }
+    },
+    async deferPendingOrder(transactionId, decision) {
+      const order = transactions.get(transactionId)
+      if (!order || order.fulfillmentStatus !== 'PENDING' || order.needsReview) return null
+      const update = decision === 'REVIEW'
+        ? { needsReview: true }
+        : { reminderUntil: new Date(Date.now() + 300000).toISOString() }
+      transactions.set(transactionId, { ...order, ...update })
+      return update
     },
     async updateOrderStatus(transactionId, fulfillmentStatus) {
       const order = transactions.get(transactionId)

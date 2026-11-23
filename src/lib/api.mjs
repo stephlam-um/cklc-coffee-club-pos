@@ -12,6 +12,7 @@ const routes = {
   closeShift: ['POST', null],
   getTodayOrders: ['GET', '/api/orders/today'],
   getPendingOrders: ['GET', '/api/orders/pending'],
+  deferPendingOrder: ['PATCH', '/api/orders/pending'],
   updateOrderStatus: ['PATCH', null],
   deletePendingOrder: ['DELETE', null],
 }
@@ -44,6 +45,7 @@ const livePosApi = {
   closeShift: (payload) => request('closeShift', payload),
   getTodayOrders: () => request('getTodayOrders'),
   getPendingOrders: () => request('getPendingOrders'),
+  deferPendingOrder: (transactionId, decision) => request('deferPendingOrder', { transactionId, decision }),
   updateOrderStatus: (transactionId, fulfillmentStatus, staffId) => request('updateOrderStatus', buildOrderStatusPayload(transactionId, fulfillmentStatus, staffId)),
   deletePendingOrder: (transactionId) => request('deletePendingOrder', { transactionId }),
 }
